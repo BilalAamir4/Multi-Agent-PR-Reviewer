@@ -1,0 +1,32 @@
+{
+  "item_id": "item_002",
+  "config": "demo",
+  "findings": [
+    {
+      "file": "pkg/io.py",
+      "line_start": 2,
+      "line_end": 2,
+      "category": "other",
+      "severity": "low",
+      "confidence": 0.3,
+      "title": "Unused import",
+      "explanation": "sys is imported but not used.",
+      "evidence": "import sys",
+      "agent": "bug_reviewer",
+      "model": "test-model"
+    },
+    {
+      "file": "pkg/io.py",
+      "line_start": 1,
+      "line_end": 2,
+      "category": "hardcoded_secret",
+      "severity": "high",
+      "confidence": 0.4,
+      "title": "Possible secret",
+      "explanation": "A spurious claim.",
+      "evidence": "import os",
+      "agent": "security_reviewer",
+      "model": "test-model"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# D8a: a planted kind (key) also accepts these finding categories.
+# Add groups only before the first evaluation run, each with a decision record.
+missing_none_check: [unhandled_exception]

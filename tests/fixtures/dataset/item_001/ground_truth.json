@@ -1,0 +1,26 @@
+{
+  "item_id": "item_001",
+  "source_repo": "example/demo",
+  "base_commit": "0123456789abcdef0123456789abcdef01234567",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "pkg/calc.py",
+      "line_start": 11,
+      "line_end": 12,
+      "kind": "missing_none_check",
+      "accepted_kinds": ["missing_none_check", "unhandled_exception"],
+      "description": "items.get(0) may return None and .amount is read without a check."
+    },
+    {
+      "bug_id": "b2",
+      "file": "pkg/util.py",
+      "line_start": 2,
+      "line_end": 2,
+      "kind": "off_by_one",
+      "accepted_kinds": ["off_by_one"],
+      "description": "xs[len(xs)] indexes one past the end."
+    }
+  ]
+}

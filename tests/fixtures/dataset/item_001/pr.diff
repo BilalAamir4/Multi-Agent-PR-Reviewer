@@ -1,0 +1,47 @@
+diff --git a/pkg/calc.py b/pkg/calc.py
+index 1111111..2222222 100644
+--- a/pkg/calc.py
++++ b/pkg/calc.py
+@@ -8,6 +8,7 @@ def total(items):
+     a = 8
+     a = 9
+     a = 10
+-    old = items[0]
++    first = items.get(0)
++    value = first.amount
+     a = 13
+     a = 14
+@@ -40,5 +41,3 @@ def total(items):
+     b = 41
+-    b = 42
+-    b = 43
+     b = 44
+     b = 45
+@@ -60,3 +59,1 @@ def total(items):
+     c = 59
+-    c = 60
+-    c = 61
+diff --git a/pkg/util.py b/pkg/util.py
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/pkg/util.py
+@@ -0,0 +1,3 @@
++def last(xs):
++    return xs[len(xs)]
++# end
+diff --git a/pkg/old.py b/pkg/old.py
+deleted file mode 100644
+index 6666666..0000000
+--- a/pkg/old.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-x = 1
+-y = 2
+diff --git a/README.md b/README.md
+index 7777777..8888888 100644
+--- a/README.md
++++ b/README.md
+@@ -1,1 +1,2 @@
+ # Demo
++More.

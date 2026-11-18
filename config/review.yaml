@@ -1,0 +1,4 @@
+# D12: spawn one worker per .py file when either limit is reached. Fixed during evaluation.
+spawn:
+  min_py_files: 4
+  max_specialist_prompt_tokens: 30000

@@ -1,0 +1,7 @@
+{
+  "item_id": "item_002",
+  "source_repo": "example/demo",
+  "base_commit": "89abcdef0123456789abcdef0123456789abcdef",
+  "is_clean": true,
+  "bugs": []
+}

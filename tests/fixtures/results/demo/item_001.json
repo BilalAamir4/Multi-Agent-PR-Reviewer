@@ -1,0 +1,45 @@
+{
+  "item_id": "item_001",
+  "config": "demo",
+  "findings": [
+    {
+      "file": "pkg/calc.py",
+      "line_start": 11,
+      "line_end": 12,
+      "category": "unhandled_exception",
+      "severity": "high",
+      "confidence": 0.9,
+      "title": "AttributeError when the first item is missing",
+      "explanation": "items.get(0) can return None; .amount then raises.",
+      "evidence": "    value = first.amount",
+      "agent": "bug_reviewer",
+      "model": "test-model"
+    },
+    {
+      "file": "pkg/util.py",
+      "line_start": 2,
+      "line_end": 2,
+      "category": "wrong_comparison",
+      "severity": "medium",
+      "confidence": 0.5,
+      "title": "Suspicious index",
+      "explanation": "The index looks wrong.",
+      "evidence": "    return xs[len(xs)]",
+      "agent": "bug_reviewer",
+      "model": "test-model"
+    },
+    {
+      "file": "pkg/calc.py",
+      "line_start": 30,
+      "line_end": 30,
+      "category": "other",
+      "severity": "low",
+      "confidence": 0.2,
+      "title": "Unrelated remark",
+      "explanation": "A comment on an unchanged line.",
+      "evidence": "a = 30",
+      "agent": "bug_reviewer",
+      "model": "test-model"
+    }
+  ]
+}
