@@ -26,13 +26,29 @@ uv run pytest -q            # tests
 uv run ruff check .         # lint
 uv run ruff format .        # format
 uv run python -m eval.score --config <config_name>   # score eval/results/<config_name>/
+uv run pytest -q -m "not integration"                # unit tests only (what CI runs)
+uv run pytest -q -m integration     # needs keys and Docker; spends free-tier model calls
+uv run python scripts/list_models.py      # writes docs/model-inventory.md (no quota used)
+uv run python scripts/check_finding.py    # 1 call to the evaluation model, traced
+uv run python scripts/check_tool_calls.py [model-id ...] [--model-calls 1]   # 2 calls per model
+uv run python scripts/check_sandbox.py    # Docker probe of the D2 settings
+uv run python scripts/check_langgraph.py  # langgraph dev + A2A on port 2024 (no model calls)
 ```
+
+Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
+run the model checks in loops.
 
 ## Hard rules
 
 - Do not use `langgraph-supervisor`.
 - Dependency versions are pinned with `==`; no upgrades or loosening without approval.
 - PR code never runs on the host, only in the Docker sandbox (D2). Only `pytest` runs there.
+- Sandbox image contract (`docs/decisions/0003-sandbox-copy-into-volume.md`): every image passed
+  to `run_in_sandbox`, including each Dockerfile in `sandbox_images/`, must contain
+  `RUN mkdir /work && chown 1000:1000 /work`.
+- Model IDs, providers, limits and chains live only in `config/models.yaml`.
+- Tests that call a model API or Docker are marked `integration` and skip with a reason when
+  keys or Docker are missing.
 - Secrets come only from `.env` (see `.env.example`); never commit `.env` or put secrets in traces.
 - `eval/score.py` must not change after the first evaluation run without a decision record.
 - Do not add placeholder modules for later stages.
@@ -40,7 +56,9 @@ uv run python -m eval.score --config <config_name>   # score eval/results/<confi
 ## Layout
 
 - `src/reviewer/schemas.py`: `Finding` schema. `src/reviewer/config.py`: `config/review.yaml`
-  (D12 spawn limit).
+  (D12 spawn limit) and `config/models.yaml` (`load_models_config`).
+- `src/reviewer/sandbox.py`: `run_in_sandbox`, `get_client`, `SandboxUnavailable` (D2, D2b).
+- `scripts/`: stage 0B environment checks; `scripts/langgraph_check/`: echo graph for `langgraph dev`.
 - `eval/ground_truth.py`: dataset item format. `eval/equivalences.yaml`: D8a groups.
   `eval/score.py`: the matching rule and scorer CLI.
 - `eval/dataset/<item_id>/{pr.diff, ground_truth.json}`; `eval/results/<config>/`.
@@ -50,7 +68,7 @@ uv run python -m eval.score --config <config_name>   # score eval/results/<confi
 | Stage | Status |
 | --- | --- |
 | 0A Skeleton, deps, `Finding`, ground truth, scorer | done |
-| 0B Environment checks (models, tracing, sandbox, `langgraph dev`) | not started |
+| 0B Environment checks (models, tracing, sandbox, `langgraph dev`) | done (see `docs/environment-check.md`) |
 | 0C Dataset repositories and first 5 items | not started |
 | 1 One agent | not started |
 | 2 Calling specialists | not started |

@@ -1,0 +1,128 @@
+# Limits from the free tiers, read from the consoles on Nov 17, 2026 (docs/model-routing.md).
+# IDs are exact, from docs/model-inventory.md (listed Nov 19, 2026), without the "models/" prefix.
+# tool_calling is set from scripts/check_tool_calls.py (stage 0B); unknown means not tested.
+models:
+  # Group A. Gemini Flash: 5 RPM, 250K TPM, 20 RPD
+  gemini-3.8-flash:
+    provider: google_genai
+    rpm: 5
+    tpm: 250000
+    rpd: 20
+    tpd: null
+    tool_calling: unknown
+  gemini-3.6-flash:
+    provider: google_genai
+    rpm: 5
+    tpm: 250000
+    rpd: 20
+    tpd: null
+    tool_calling: unknown
+  # "3 Flash" in the routing doc: the only gemini-3-flash ID listed is a preview (owner's choice,
+  # Nov 19, 2026; pinned rather than the gemini-flash-latest alias).
+  gemini-3-flash-preview:
+    provider: google_genai
+    rpm: 5
+    tpm: 250000
+    rpd: 20
+    tpd: null
+    tool_calling: unknown
+  gemini-2.5-flash:
+    provider: google_genai
+    rpm: 5
+    tpm: 250000
+    rpd: 20
+    tpd: null
+    tool_calling: unknown
+  # Group B. Gemini Flash Lite: 15 RPM, 250K TPM, 500 RPD
+  gemini-3.5-flash-lite:
+    provider: google_genai
+    rpm: 15
+    tpm: 250000
+    rpd: 500
+    tpd: null
+    tool_calling: unknown
+  gemini-3.1-flash-lite:
+    provider: google_genai
+    rpm: 15
+    tpm: 250000
+    rpd: 500
+    tpd: null
+    tool_calling: unknown
+  # Group C. Groq: 30 RPM, 8K TPM, 1K RPD, 200K TPD
+  openai/gpt-oss-120b:
+    provider: groq
+    rpm: 30
+    tpm: 8000
+    rpd: 1000
+    tpd: 200000
+    tool_calling: true
+  qwen/qwen3.8-27b:
+    provider: groq
+    rpm: 30
+    tpm: 8000
+    rpd: 1000
+    tpd: 200000
+    tool_calling: unknown
+  openai/gpt-oss-20b:
+    provider: groq
+    rpm: 30
+    tpm: 8000
+    rpd: 1000
+    tpd: 200000
+    tool_calling: unknown
+  # Group D. Gemma: 30 RPM, 16K TPM, 14.4K RPD
+  gemma-4-31b-it:
+    provider: google_genai
+    rpm: 30
+    tpm: 16000
+    rpd: 14400
+    tpd: null
+    tool_calling: true
+  gemma-4-26b-a4b-it:
+    provider: google_genai
+    rpm: 30
+    tpm: 16000
+    rpd: 14400
+    tpd: null
+    tool_calling: unknown
+  # Not in any chain. The routing doc gives only 20 RPD for Gemini 4 Hydrogen.
+  gemini-4-hydrogen:
+    provider: google_genai
+    rpm: null
+    tpm: null
+    rpd: 20
+    tpd: null
+    tool_calling: unknown
+  # Not in any chain: injection classifier for stage 7. The routing doc gives 14.4K RPD;
+  # the other Groq limits are not stated for it, so they are left null.
+  meta-llama/llama-prompt-guard-2-86m:
+    provider: groq
+    rpm: null
+    tpm: null
+    rpd: 14400
+    tpd: null
+    tool_calling: unknown
+chains: # normal runs only (routing doc "Chains by role")
+  orchestrator:
+    - gemini-3.8-flash
+    - gemini-3.6-flash
+    - gemini-3-flash-preview
+    - gemini-2.5-flash
+    - gemini-3.5-flash-lite
+  specialist:
+    - gemini-3.5-flash-lite
+    - gemini-3.1-flash-lite
+    - gemma-4-31b-it
+    - openai/gpt-oss-120b # only if the prompt fits its 8K TPM; the router checks tpm
+  worker:
+    - gemini-3.1-flash-lite
+    - openai/gpt-oss-120b
+    - qwen/qwen3.8-27b
+    - gemma-4-26b-a4b-it
+  verifier:
+    - openai/gpt-oss-120b
+    - qwen/qwen3.8-27b
+    - gemini-3.6-flash
+evaluation: # D4 / S9
+  model: gemini-3.1-flash-lite
+  cross_model_fallback: false
