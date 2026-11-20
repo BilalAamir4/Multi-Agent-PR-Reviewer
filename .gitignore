@@ -8,3 +8,5 @@ quota_state.json
 *.sqlite
 *.sqlite3
 .langgraph_api/
+eval/repos/
+eval/workspaces/

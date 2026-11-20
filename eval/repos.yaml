@@ -1,0 +1,69 @@
+# Dataset source repositories (stage 0C; docs/decisions/0004-dataset-source-repos.md).
+# Loaded and validated by eval/repos.py. Sandbox images: sandbox_images/<name>/Dockerfile.
+# test_command runs in /work inside the image with the D2 settings (run_in_sandbox).
+# No image has pytest-timeout installed, so no command uses --timeout; test_timeout_s is the
+# container-level limit.
+# recommended_plants: kinds that are natural to plant in this repository (owner's choice). The other
+# D8 kinds (off_by_one, missing_none_check, wrong_comparison, unhandled_exception, ineffective_test)
+# are plantable in every repository.
+repos:
+  sqlite-utils:
+    url: https://github.com/simonw/sqlite-utils.git
+    license: Apache-2.0
+    default_branch: main
+    image_commit: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+    image: mapr-sandbox-sqlite-utils:9c66bafa52ae
+    pythonpath: [.]
+    test_command: [python, -m, pytest, -q, -p, no:cacheprovider, -x]
+    test_timeout_s: 120
+    recommended_plants: [sql_injection, hardcoded_secret]
+  alembic:
+    url: https://github.com/sqlalchemy/alembic.git
+    license: MIT
+    default_branch: main
+    image_commit: 1bcba93ea0473c69b48e704f842ca96e9e5348f5
+    image: mapr-sandbox-alembic:1bcba93ea047
+    pythonpath: [.]
+    test_command: [python, -m, pytest, -q, -p, no:cacheprovider, -x]
+    test_timeout_s: 120
+    recommended_plants: [sql_injection, hardcoded_secret]
+    # older commits fail 2 to 25 tests against SQLAlchemy 2.1 / black 26 (decision 0004)
+    eligible_since: 2026-01-27
+  click:
+    url: https://github.com/pallets/click.git
+    license: BSD-3-Clause
+    default_branch: main
+    image_commit: 08b803cf32ceb2ae6a772c62d5da42757a897d44
+    image: mapr-sandbox-click:08b803cf32ce
+    pythonpath: [src]
+    # The three deselected tests execute a fake pager script written to tmp_path, and D2 mounts
+    # /tmp noexec. The -W filter stops pytest 9's PytestRemovedIn10Warning (iterators passed to
+    # parametrize in older tests) from becoming an error under click's filterwarnings = error.
+    # Both are explained in docs/decisions/0004-dataset-source-repos.md.
+    test_command:
+      - python
+      - -m
+      - pytest
+      - -q
+      - -p
+      - no:cacheprovider
+      - -x
+      - -W
+      - ignore::pytest.PytestRemovedIn10Warning
+      - --deselect=tests/test_termui.py::test_pipepager_less_detection_matches_stem[less]
+      - --deselect=tests/test_termui.py::test_pipepager_less_detection_matches_stem[less.exe]
+      - --deselect=tests/test_termui.py::test_pipepager_less_detection_case_insensitive_on_windows
+    test_timeout_s: 120
+    # older commits fail under pytest 9 even with the -W filter (decision 0004)
+    eligible_since: 2023-05-08
+  marshmallow:
+    url: https://github.com/marshmallow-code/marshmallow.git
+    license: MIT
+    default_branch: dev
+    image_commit: f268f0c4d12c4edb43743ca5703eed7954320245
+    image: mapr-sandbox-marshmallow:f268f0c4d12c
+    pythonpath: [src]
+    test_command: [python, -m, pytest, -q, -p, no:cacheprovider, -x]
+    test_timeout_s: 120
+    # older tests import pytz, which is not a dependency at image_commit (decision 0004)
+    eligible_since: 2024-10-09
