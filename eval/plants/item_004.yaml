@@ -1,0 +1,38 @@
+# click: "Expand `Choice` token normalization + make generic (#2796)"
+item_id: item_004
+repo: click
+commit: 4ece17a107d7b2e8bc3bd14356c2b53038fe41cf
+expected_bucket: large
+is_clean: false
+bugs:
+  - bug_id: b1
+    kind: missing_none_check
+    file: src/click/types.py
+    find: |
+      if ctx is not None and ctx.token_normalize_func is not None:
+    replace: |
+      if ctx.token_normalize_func is not None:
+    description: >-
+      Choice.normalize_choice drops the ctx is not None guard, so normalizing without a
+      context (convert, get_missing_message or get_invalid_choice_message with ctx=None)
+      raises AttributeError.
+  - bug_id: b2
+    kind: unhandled_exception
+    file: src/click/types.py
+    find: |
+      except StopIteration:
+    replace: |
+      except KeyError:
+    description: >-
+      Choice.convert catches KeyError instead of the StopIteration that next() raises, so an
+      invalid choice escapes as a StopIteration instead of a usage error.
+  - bug_id: b3
+    kind: ineffective_test
+    file: tests/test_basic.py
+    find: |
+      assert result.output == "not-none\n"
+    replace: |
+      assert result.output
+    description: >-
+      test_choice_argument_none only asserts that some output was printed, so it no longer
+      checks that the "not-none" choice is converted and echoed unchanged.

@@ -1,0 +1,42 @@
+{
+  "item_id": "item_004",
+  "source_repo": "pallets/click",
+  "base_commit": "8a47580a00f3404e7071b9ecfec3692a1e18309f",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "src/click/types.py",
+      "line_start": 300,
+      "line_end": 300,
+      "kind": "missing_none_check",
+      "accepted_kinds": [
+        "missing_none_check",
+        "unhandled_exception"
+      ],
+      "description": "Choice.normalize_choice drops the ctx is not None guard, so normalizing without a context (convert, get_missing_message or get_invalid_choice_message with ctx=None) raises AttributeError."
+    },
+    {
+      "bug_id": "b2",
+      "file": "src/click/types.py",
+      "line_start": 353,
+      "line_end": 353,
+      "kind": "unhandled_exception",
+      "accepted_kinds": [
+        "unhandled_exception"
+      ],
+      "description": "Choice.convert catches KeyError instead of the StopIteration that next() raises, so an invalid choice escapes as a StopIteration instead of a usage error."
+    },
+    {
+      "bug_id": "b3",
+      "file": "tests/test_basic.py",
+      "line_start": 478,
+      "line_end": 478,
+      "kind": "ineffective_test",
+      "accepted_kinds": [
+        "ineffective_test"
+      ],
+      "description": "test_choice_argument_none only asserts that some output was printed, so it no longer checks that the \"not-none\" choice is converted and echoed unchanged."
+    }
+  ]
+}

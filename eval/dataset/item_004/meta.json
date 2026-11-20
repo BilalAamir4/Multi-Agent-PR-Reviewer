@@ -1,0 +1,112 @@
+{
+  "item_id": "item_004",
+  "repo": "click",
+  "upstream_commit": "4ece17a107d7b2e8bc3bd14356c2b53038fe41cf",
+  "parent": "8a47580a00f3404e7071b9ecfec3692a1e18309f",
+  "pr_title": "Expand `Choice` token normalization + make generic (#2796)",
+  "pr_body": "",
+  "bucket": "large",
+  "py_files_changed": 8,
+  "lines_changed": 310,
+  "sweep": false,
+  "plant_patch": "diff --git a/src/click/types.py b/src/click/types.py\nindex d0a2715..6fac0fc 100644\n--- a/src/click/types.py\n+++ b/src/click/types.py\n@@ -297,7 +297,7 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):\n         \"\"\"\n         normed_value = choice.name if isinstance(choice, enum.Enum) else str(choice)\n \n-        if ctx is not None and ctx.token_normalize_func is not None:\n+        if ctx.token_normalize_func is not None:\n             normed_value = ctx.token_normalize_func(normed_value)\n \n         if not self.case_sensitive:\n@@ -350,7 +350,7 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):\n                 for original, normalized in normalized_mapping.items()\n                 if normalized == normed_value\n             )\n-        except StopIteration:\n+        except KeyError:\n             self.fail(\n                 self.get_invalid_choice_message(value=value, ctx=ctx),\n                 param=param,\ndiff --git a/tests/test_basic.py b/tests/test_basic.py\nindex b84ae73..007d76d 100644\n--- a/tests/test_basic.py\n+++ b/tests/test_basic.py\n@@ -475,7 +475,7 @@ def test_choice_argument_none(runner):\n \n     result = runner.invoke(cli, [\"not-none\"])\n     assert not result.exception\n-    assert result.output == \"not-none\\n\"\n+    assert result.output\n \n     # None is not yet supported.\n     result = runner.invoke(cli, [\"none\"])\n",
+  "tests_key": "c521692523534d59af7a3247d805bc8a37a312675aa4d456114973b9b16f8b4a",
+  "tests_original": {
+    "passed": 629,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 21,
+    "duration": 1.27,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "629 passed, 21 skipped, 1 xfailed in 1.27s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 87,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 0.61,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 87 passed in 0.61s",
+    "failing": [
+      "FAILED tests/test_basic.py::test_choice_option"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 537,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 21,
+        "duration": 1.17,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 537 passed, 21 skipped, 1 xfailed in 1.17s",
+        "failing": [
+          "FAILED tests/test_types.py::test_choice_get_invalid_choice_message"
+        ]
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 87,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.61,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 87 passed in 0.61s",
+        "failing": [
+          "FAILED tests/test_basic.py::test_choice_option"
+        ]
+      }
+    },
+    "b3": {
+      "alone": {
+        "passed": 629,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 21,
+        "duration": 1.18,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "629 passed, 21 skipped, 1 xfailed in 1.18s",
+        "failing": []
+      },
+      "own_test": "tests/test_basic.py::test_choice_argument_none",
+      "own_test_planted": {
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.05,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1 passed in 0.05s",
+        "failing": []
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b3": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

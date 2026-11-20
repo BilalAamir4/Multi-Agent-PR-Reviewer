@@ -1,0 +1,7 @@
+# sqlite-utils: "Preserve duplicate column names in query results"
+item_id: item_005
+repo: sqlite-utils
+commit: 07b603e562af19f80c3d00eb59b9cf29331127ce
+expected_bucket: large
+is_clean: true
+bugs: []

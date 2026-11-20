@@ -1,0 +1,7 @@
+# alembic: "fix(postgresql): identity column not added when existing_server_default omitted"
+item_id: item_002
+repo: alembic
+commit: b42ebe1ff576e02b8bfc9ef1c3c3a5fd1ac41bf4
+expected_bucket: small
+is_clean: true
+bugs: []

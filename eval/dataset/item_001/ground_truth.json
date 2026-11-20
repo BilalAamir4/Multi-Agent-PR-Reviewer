@@ -1,0 +1,19 @@
+{
+  "item_id": "item_001",
+  "source_repo": "marshmallow-code/marshmallow",
+  "base_commit": "c860f56d7b7232037c1e1636e499b0d15cb671cc",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "src/marshmallow/fields.py",
+      "line_start": 554,
+      "line_end": 554,
+      "kind": "wrong_comparison",
+      "accepted_kinds": [
+        "wrong_comparison"
+      ],
+      "description": "Nested tests the truthiness of many instead of comparing it with None, so an explicit many=False never overrides a nested Schema instance created with many=True."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "item_id": "item_002",
+  "source_repo": "sqlalchemy/alembic",
+  "base_commit": "6f93f9cffd4ba4aa4cb5b3bc020fb937a3cd1312",
+  "is_clean": true,
+  "bugs": []
+}

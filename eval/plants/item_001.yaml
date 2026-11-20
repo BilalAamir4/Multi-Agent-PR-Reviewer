@@ -1,0 +1,19 @@
+# marshmallow: "feat: improve consistency of many arg with nested schema (#2854)"
+# Nested(many=...) now defaults to None so a Schema instance keeps its own `many` unless the
+# field passes True or False explicitly.
+item_id: item_001
+repo: marshmallow
+commit: 2bf3ae6ac656c977ec10808b5eb0e7480ced0311
+expected_bucket: small
+is_clean: false
+bugs:
+  - bug_id: b1
+    kind: wrong_comparison
+    file: src/marshmallow/fields.py
+    find: |
+      if self.many is not None:
+    replace: |
+      if self.many:
+    description: >-
+      Nested tests the truthiness of many instead of comparing it with None, so an explicit
+      many=False never overrides a nested Schema instance created with many=True.

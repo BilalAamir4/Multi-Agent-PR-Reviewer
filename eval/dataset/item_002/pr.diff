@@ -1,0 +1,85 @@
+diff --git a/alembic/ddl/postgresql.py b/alembic/ddl/postgresql.py
+index 46b17fa2..47317c7f 100644
+--- a/alembic/ddl/postgresql.py
++++ b/alembic/ddl/postgresql.py
+@@ -569,8 +569,9 @@ def visit_identity_column(
+         # drop identity
+         text += "DROP IDENTITY"
+         return text
+-    elif element.existing_server_default is None:
+-        # add identity options
++    elif element.existing_server_default in (None, False):
++        # None/ False can get here via different default / explicit paths,
++        # see issue #1504
+         text += "ADD "
+         text += compiler.visit_identity_column(element.default)
+         return text
+diff --git a/docs/build/unreleased/1504.rst b/docs/build/unreleased/1504.rst
+new file mode 100644
+index 00000000..88cd1a25
+--- /dev/null
++++ b/docs/build/unreleased/1504.rst
+@@ -0,0 +1,9 @@
++.. change::
++    :tags: bug, postgresql
++    :tickets: 1504
++
++    Fixed bug where :meth:`.Operations.alter_column` against a PostgreSQL
++    identity column would render an incomplete, invalid ``ALTER TABLE ... ALTER
++    COLUMN`` statement with no clause at all when ``existing_server_default``
++    was omitted, even if there were no existing server default.  Pull request
++    courtesy Riti Grover.
+diff --git a/tests/test_postgresql.py b/tests/test_postgresql.py
+index 5a9f7c70..dd8bd028 100644
+--- a/tests/test_postgresql.py
++++ b/tests/test_postgresql.py
+@@ -1,4 +1,5 @@
+ import itertools
++from typing import Any
+ 
+ from sqlalchemy import BigInteger
+ from sqlalchemy import Boolean
+@@ -415,21 +416,36 @@ class PostgresqlOpTest(TestBase):
+         )
+ 
+     @combinations(
++        ({}, None),
+         ({}, None),
+         (dict(always=True), None),
+         (
+             dict(start=3, increment=33, maxvalue=99, cycle=True),
+             "INCREMENT BY 33 START WITH 3 MAXVALUE 99 CYCLE",
+         ),
++        argnames="kw, text",
++    )
++    @testing.variation(
++        "pass_existing_server_default", ["omit", "none", "false"]
+     )
+-    def test_add_identity_to_column(self, kw, text):
++    def test_add_identity_to_column(
++        self, kw, text, pass_existing_server_default
++    ):
+         context = op_fixture("postgresql")
+-        op.alter_column(
+-            "t1",
+-            "some_column",
+-            server_default=Identity(**kw),
+-            existing_server_default=None,
+-        )
++        alter_column_kw: dict[str, Any] = {
++            "server_default": Identity(**kw),
++        }
++        if pass_existing_server_default.none:
++            alter_column_kw["existing_server_default"] = None
++        elif pass_existing_server_default.false:
++            alter_column_kw["existing_server_default"] = False
++        elif pass_existing_server_default.omit:
++            # pass nothing, tests #1504
++            pass
++        else:
++            pass_existing_server_default.fail()
++
++        op.alter_column("t1", "some_column", **alter_column_kw)
+         qualification = "ALWAYS" if kw.get("always", False) else "BY DEFAULT"
+         options = " (%s)" % text if text else ""
+         context.assert_(

@@ -38,6 +38,9 @@ uv run python -m eval.find_candidates <name>  # index eligible commits -> eval/c
 uv run python -m eval.check_repos [name ...]  # baseline sandboxed test runs (Docker, no model calls)
 uv run python -m eval.check_repos --narrow <name>  # propose eligible_since for repos.yaml
 docker build -t <image from eval/repos.yaml> sandbox_images/<name>  # build a repository's image
+uv run python -m eval.build_dataset --all     # build eval/dataset/ from eval/plants/*.yaml (Docker)
+uv run python -m eval.build_dataset <item_id> [--rerun-tests]   # one item; reruns cached tests
+uv run python -m eval.check_dataset [item_id ...] [--no-tests]  # 11 checks per item (Docker)
 ```
 
 Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
@@ -59,6 +62,8 @@ run the model checks in loops.
   keys or Docker are missing.
 - Secrets come only from `.env` (see `.env.example`); never commit `.env` or put secrets in traces.
 - `eval/score.py` must not change after the first evaluation run without a decision record.
+  Neither may `eval/plants/*.yaml` or `eval/dataset/` (recipes and ground truth are frozen then).
+- Never weaken a check in `eval/check_dataset.py` to make an item pass; change the item.
 - Do not add placeholder modules for later stages.
 
 ## Layout
@@ -69,7 +74,11 @@ run the model checks in loops.
 - `scripts/`: stage 0B environment checks; `scripts/langgraph_check/`: echo graph for `langgraph dev`.
 - `eval/ground_truth.py`: dataset item format. `eval/equivalences.yaml`: D8a groups.
   `eval/score.py`: the matching rule and scorer CLI.
-- `eval/dataset/<item_id>/{pr.diff, ground_truth.json}`; `eval/results/<config>/`.
+- `eval/dataset/<item_id>/{pr.diff, ground_truth.json, meta.json}` (see `eval/dataset/README.md`);
+  `eval/results/<config>/`. `eval/plants/<item_id>.yaml`: plant recipes (source of truth).
+  `eval/build_dataset.py` (recipes -> items), `eval/check_dataset.py` (item checks).
+  `eval.repos.materialize(item_id)` -> `eval/workspaces/<item_id>/` (worktree at `base_commit`
+  plus `pr.diff`, gitignored); `eval.repos.item_files(item_id)` for sandbox runs.
 - `eval/repos.yaml` + `eval/repos.py`: source repositories, `ensure_clone`, `snapshot_files`,
   `run_repo_tests`. `eval/find_candidates.py` (commit filter, buckets), `eval/sweep.py` (sweep
   tagging), `eval/check_repos.py` (baseline). `eval/candidates/<name>.json`: commit index and
@@ -83,7 +92,8 @@ run the model checks in loops.
 | 0A Skeleton, deps, `Finding`, ground truth, scorer | done |
 | 0B Environment checks (models, tracing, sandbox, `langgraph dev`) | done (see `docs/environment-check.md`) |
 | 0C Dataset source repositories, sandbox images, commit index | done (see decision 0004) |
-| 0D First 5 dataset items (pick commits, plant bugs) | not started |
+| 0D First 5 dataset items (pick commits, plant bugs) | done (see `eval/dataset/README.md`) |
+| **Stage 0** | **complete** |
 | 1 One agent | not started |
 | 2 Calling specialists | not started |
 | 3 A2A | not started |

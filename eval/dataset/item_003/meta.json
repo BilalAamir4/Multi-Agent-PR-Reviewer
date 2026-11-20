@@ -1,0 +1,88 @@
+{
+  "item_id": "item_003",
+  "repo": "sqlite-utils",
+  "upstream_commit": "7a52214624ae0e2c3fdf07215c1bcfc1393dbd93",
+  "parent": "d302835d57bcf53c36c0dc67356ec292f55a5931",
+  "pr_title": "drop-index command and table.drop_index(index_name)",
+  "pr_body": "Closes #626",
+  "bucket": "medium",
+  "py_files_changed": 4,
+  "lines_changed": 138,
+  "sweep": false,
+  "plant_patch": "diff --git a/sqlite_utils/db.py b/sqlite_utils/db.py\nindex 62e3656..f970d21 100644\n--- a/sqlite_utils/db.py\n+++ b/sqlite_utils/db.py\n@@ -3093,7 +3093,7 @@ class Table(Queryable):\n             raise OperationalError(\n                 \"No index named {} on table {}\".format(index_name, self.name)\n             )\n-        self.db.execute(\"DROP INDEX {}\".format(quote_identifier(index_name)))\n+        self.db.execute(\"DROP INDEX {}\".format(index_name))\n         return self\n \n     def add_column(\ndiff --git a/tests/test_create.py b/tests/test_create.py\nindex d281eb4..5ec9b85 100644\n--- a/tests/test_create.py\n+++ b/tests/test_create.py\n@@ -834,7 +834,7 @@ def test_drop_index_wrong_table(fresh_db):\n     dogs.create_index([\"name\"])\n     with pytest.raises(OperationalError, match=\"No index named idx_dogs_name\"):\n         cats.drop_index(\"idx_dogs_name\")\n-    assert [index.name for index in dogs.indexes] == [\"idx_dogs_name\"]\n+    assert [index.name for index in cats.indexes] == []\n \n \n def test_create_index_desc(fresh_db):\n",
+  "tests_key": "f32dc0f19d926806f3ce3ffa0c9ce09e9343e3ad3ab638e65592e2b0da930865",
+  "tests_original": {
+    "passed": 1350,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 9.02,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1350 passed, 16 skipped, 32 warnings in 9.02s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1350,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 9.1,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1350 passed, 16 skipped, 32 warnings in 9.10s",
+    "failing": []
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 1350,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 16,
+        "duration": 8.99,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1350 passed, 16 skipped, 32 warnings in 8.99s",
+        "failing": []
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 1350,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 16,
+        "duration": 8.96,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1350 passed, 16 skipped, 32 warnings in 8.96s",
+        "failing": []
+      },
+      "own_test": "tests/test_create.py::test_drop_index_wrong_table",
+      "own_test_planted": {
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.62,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1 passed in 0.62s",
+        "failing": []
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

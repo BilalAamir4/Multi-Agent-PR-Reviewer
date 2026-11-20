@@ -1,0 +1,38 @@
+{
+  "item_id": "item_002",
+  "repo": "alembic",
+  "upstream_commit": "b42ebe1ff576e02b8bfc9ef1c3c3a5fd1ac41bf4",
+  "parent": "6f93f9cffd4ba4aa4cb5b3bc020fb937a3cd1312",
+  "pr_title": "fix(postgresql): identity column not added when existing_server_default omitted",
+  "pr_body": "Fixed bug where :meth:`.Operations.alter_column` against a PostgreSQL\nidentity column would render an incomplete, invalid ``ALTER TABLE ... ALTER\nCOLUMN`` statement with no clause at all when ``existing_server_default``\nwas omitted, even if there were no existing server default.  Pull request\ncourtesy Riti Grover.\n\nFixes: #1504\nCloses: #1869\nPull-request: https://github.com/sqlalchemy/alembic/pull/1869\nPull-request-sha: 6e594213ba55b9ae9c5a08eca3dfe62474f4f284\n\nChange-Id: Ic8737c645a48710e5b46d9d4399732636717d3de",
+  "bucket": "small",
+  "py_files_changed": 2,
+  "lines_changed": 44,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "3bbd26ab9c4b6680cec707c263b8d43e2c0ce8a7d3d18cc8e2b16d63b15d834c",
+  "tests_original": {
+    "passed": 1926,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 130,
+    "duration": 9.97,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1926 passed, 130 skipped in 9.97s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1926,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 130,
+    "duration": 10.17,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1926 passed, 130 skipped in 10.17s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

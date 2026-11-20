@@ -1,0 +1,62 @@
+{
+  "item_id": "item_001",
+  "repo": "marshmallow",
+  "upstream_commit": "2bf3ae6ac656c977ec10808b5eb0e7480ced0311",
+  "parent": "c860f56d7b7232037c1e1636e499b0d15cb671cc",
+  "pr_title": "feat: improve consistency of many arg with nested schema (#2854)",
+  "pr_body": "* feat: many consistency between nested schema\n\n* Update AUTHORS.rst\n\n* Update changelog\n\n---------\n\nCo-authored-by: Jacques Fournier <jacques.fournier.ext@eulerhermes.com>\nCo-authored-by: Steven Loria <git@stevenloria.com>",
+  "bucket": "small",
+  "py_files_changed": 2,
+  "lines_changed": 71,
+  "sweep": false,
+  "plant_patch": "diff --git a/src/marshmallow/fields.py b/src/marshmallow/fields.py\nindex 5d3d64a9..adab15bb 100644\n--- a/src/marshmallow/fields.py\n+++ b/src/marshmallow/fields.py\n@@ -551,7 +551,7 @@ class Nested(Field):\n                 if self.exclude:\n                     original = self._schema.exclude\n                     self._schema.exclude = set_class(self.exclude) | set_class(original)\n-                if self.many is not None:\n+                if self.many:\n                     self._schema.many = self.many\n                 self._schema._init_fields()\n             else:\n",
+  "tests_key": "e806205bc8b8e716e2176ed8c9e474fa8f87c7edd08e65c6f0d5e55066b00c32",
+  "tests_original": {
+    "passed": 1123,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.41,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1123 passed in 1.41s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 689,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.23,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 689 passed in 1.23s",
+    "failing": [
+      "FAILED tests/test_schema.py::test_nested_many_should_override_schema_many_case2"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 689,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 1.2,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 689 passed in 1.20s",
+        "failing": [
+          "FAILED tests/test_schema.py::test_nested_many_should_override_schema_many_case2"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

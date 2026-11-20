@@ -184,3 +184,140 @@ def run_repo_tests(name: str, files: dict[str, bytes]) -> SandboxResult:
     """Run the repository's ``test_command`` on ``files`` in its sandbox image (D2)."""
     spec = get_repo(name)
     return run_in_sandbox(spec.image, files, spec.test_command, spec.test_timeout_s)
+
+
+# --- Worktrees and dataset items (stage 0D) ---------------------------------------------------
+
+DIFF_OPTIONS = ("--no-color", "--no-ext-diff", "--no-textconv", "-M")
+
+
+def workspaces_dir() -> Path:
+    """``eval/workspaces/`` (gitignored): worktrees for building, checking and reviewing items."""
+    return repo_root() / "eval" / "workspaces"
+
+
+def git_bytes(repo: Path, *args: str, input: bytes | None = None) -> bytes:
+    """Run ``git -C repo <args>`` and return stdout; raise with stderr on failure."""
+    res = subprocess.run(
+        ["git", "-C", str(repo), *args], input=input, capture_output=True, check=False
+    )
+    if res.returncode != 0:
+        err = res.stderr.decode("utf-8", "replace").strip()
+        raise RuntimeError(f"git {' '.join(args[:3])} failed ({res.returncode}): {err}")
+    return res.stdout
+
+
+def add_worktree(repo: Path, path: Path, commit: str) -> Path:
+    """Detached worktree of ``repo`` at ``commit`` with ``core.autocrlf false`` (D3).
+
+    Checking out only writes files; no upstream code runs.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    git_bytes(repo, "worktree", "prune")
+    git_bytes(
+        repo,
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "core.eol=lf",
+        "worktree",
+        "add",
+        "--detach",
+        str(path),
+        commit,
+    )
+    return path
+
+
+def remove_worktree(repo: Path, path: Path) -> None:
+    """Remove a worktree made by ``add_worktree`` (and prune stale entries)."""
+    if path.exists():
+        git_bytes(repo, "worktree", "remove", "--force", str(path))
+    git_bytes(repo, "worktree", "prune")
+
+
+def _registered_worktrees(repo: Path) -> set[Path]:
+    out = git_bytes(repo, "worktree", "list", "--porcelain", "-z").decode("utf-8")
+    return {
+        Path(rec[len("worktree ") :]).resolve()
+        for rec in out.split("\0")
+        if rec.startswith("worktree ")
+    }
+
+
+def apply_diff(worktree: Path, diff: bytes, *, check_only: bool = False) -> None:
+    """``git apply`` (or ``git apply --check``) ``diff`` inside ``worktree``."""
+    args = ["-c", "core.autocrlf=false", "apply", "--whitespace=nowarn"]
+    if check_only:
+        args.append("--check")
+    git_bytes(worktree, *args, "-", input=diff)
+
+
+def repo_name_for_slug(slug: str) -> str:
+    """The ``eval/repos.yaml`` key whose URL is ``owner/name`` == ``slug``."""
+    for name, spec in _default_repos().items():
+        if spec.slug == slug:
+            return name
+    raise KeyError(f"no repository in {REPOS_YAML.name} for {slug!r}")
+
+
+def _load_item(item_id: str):
+    from eval.ground_truth import load_item  # local import: ground_truth is independent
+
+    return load_item(repo_root() / "eval" / "dataset" / item_id)
+
+
+def materialize(item_id: str) -> Path:
+    """Create ``eval/workspaces/<item_id>/``: a worktree at ``base_commit`` with ``pr.diff``
+    applied, and return its path. An existing worktree for the item is replaced.
+
+    Only ``git`` touches the clone; the files are for reading (stage 1 review tools) and for
+    copying into the sandbox (``item_files``).
+    """
+    gt, diff_text = _load_item(item_id)
+    name = repo_name_for_slug(gt.source_repo)
+    repo = clone_dir(name)
+    if not (repo / ".git").exists():
+        ensure_clone(name)
+    path = workspaces_dir() / item_id
+    if path.exists():
+        if path.resolve() not in _registered_worktrees(repo):
+            raise RuntimeError(f"{path} exists and is not a worktree of {repo}; remove it first")
+        remove_worktree(repo, path)
+    add_worktree(repo, path, gt.base_commit)
+    apply_diff(path, diff_text.encode("utf-8"))
+    return path
+
+
+def diff_file_changes(diff_text: str) -> tuple[set[str], set[str]]:
+    """(paths written, paths removed) by a git diff, as POSIX strings. A rename removes its
+    source path and writes its target path."""
+    from eval.ground_truth import parse_diff
+
+    written: set[str] = set()
+    removed: set[str] = set()
+    for pf in parse_diff(diff_text):
+        source = pf.source_file[2:] if pf.source_file.startswith("a/") else pf.source_file
+        if pf.is_removed_file:
+            removed.add(str(PurePosixPath(source)))
+            continue
+        written.add(str(PurePosixPath(pf.path)))
+        if not pf.is_added_file and source != pf.path:
+            removed.add(str(PurePosixPath(source)))
+    return written, removed - written
+
+
+def item_files(item_id: str) -> dict[str, bytes]:
+    """Every file of the item's PR state (``base_commit`` plus ``pr.diff``) for sandbox runs:
+    the tracked files at ``base_commit`` with the files ``pr.diff`` touches read from
+    ``materialize(item_id)``."""
+    gt, diff_text = _load_item(item_id)
+    name = repo_name_for_slug(gt.source_repo)
+    path = materialize(item_id)
+    files = snapshot_files(name, gt.base_commit)
+    written, removed = diff_file_changes(diff_text)
+    for p in removed:
+        files.pop(p, None)
+    for p in written:
+        files[p] = (path / PurePosixPath(p)).read_bytes()
+    return files

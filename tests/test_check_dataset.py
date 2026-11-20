@@ -1,0 +1,228 @@
+"""eval/check_dataset.py checks 5, 6, 7, 8, 10 and 11 on synthetic repositories.
+
+Token-like strings are assembled at run time so this file never contains one that secret
+scanning would recognize.
+"""
+
+import secrets
+
+import pytest
+
+from eval.check_dataset import (
+    check_giveaways,
+    check_oracle,
+    check_plant_real,
+    check_plants_on_added_lines,
+    check_secrets,
+    check_separation,
+)
+from tests.dataset_helpers import bug, build, make_repo, recipe
+
+
+@pytest.fixture
+def repo(tmp_path):
+    return make_repo(tmp_path)
+
+
+def write_item(tmp_path, built, gt):
+    item_dir = tmp_path / "dataset" / gt.item_id
+    item_dir.mkdir(parents=True)
+    (item_dir / "pr.diff").write_bytes(built.pr_diff.encode())
+    (item_dir / "ground_truth.json").write_bytes(gt.model_dump_json(indent=2).encode())
+    return item_dir
+
+
+def texts(built):
+    out = {p: b.decode() for p, b in built.commit_files.items()}
+    out.update(built.plant.planted)
+    return out
+
+
+def with_range(gt, start, end):
+    b = gt.bugs[0].model_copy(update={"line_start": start, "line_end": end})
+    return gt.model_copy(update={"bugs": [b]})
+
+
+# --- check 5: plants on added lines ----------------------------------------------------------
+
+
+def test_check5_passes_for_plant_on_added_line(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, gt = build(tmp_path, path, r)
+    from eval.build_dataset import upstream_diff
+
+    up = upstream_diff(path, built.parent, commit)
+    assert check_plants_on_added_lines(r, built.plant, up, built.pr_diff, gt) == []
+
+
+def test_check5_fails_for_plant_on_context_line(tmp_path, repo):
+    path, commit = repo
+    # "return sum(values)" was in the base commit, not added by the commit
+    r = recipe(commit, [bug(find="return sum(values)\n", replace="return sum(values[1:])\n")])
+    built, gt = build(tmp_path, path, r)
+    from eval.build_dataset import upstream_diff
+
+    up = upstream_diff(path, built.parent, commit)
+    problems = check_plants_on_added_lines(r, built.plant, up, built.pr_diff, gt)
+    assert any("find lines [2] were not added" in p for p in problems)
+
+
+def test_check5_fails_when_range_is_not_added_in_pr_diff(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, gt = build(tmp_path, path, r)
+    from eval.build_dataset import upstream_diff
+
+    up = upstream_diff(path, built.parent, commit)
+    problems = check_plants_on_added_lines(r, built.plant, up, built.pr_diff, with_range(gt, 1, 1))
+    assert any("not added lines in pr.diff" in p for p in problems)
+
+
+# --- check 6: the plant is real --------------------------------------------------------------
+
+
+def test_check6_passes_for_exact_range(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, gt = build(tmp_path, path, r)
+    assert check_plant_real(r, built.commit_files, gt) == []
+
+
+@pytest.mark.parametrize(("start", "end"), [(7, 8), (8, 9), (9, 9)])
+def test_check6_fails_for_loose_or_wrong_range(tmp_path, repo, start, end):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, gt = build(tmp_path, path, r)
+    problems = check_plant_real(r, built.commit_files, with_range(gt, start, end))
+    assert any("!= recomputed (8, 8)" in p for p in problems)
+
+
+def test_check6_fails_when_find_is_missing(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, gt = build(tmp_path, path, r)
+    broken = recipe(commit, [bug(find="nowhere\n")])
+    assert any("occurs 0 times" in p for p in check_plant_real(broken, built.commit_files, gt))
+
+
+# --- checks 7 and 8: separation and oracle ---------------------------------------------------
+
+
+def test_check7_separation(tmp_path, repo):
+    path, commit = repo
+    b1 = bug(find="if value is None:\n", replace="if value is False:\n", kind="wrong_comparison")
+    b2 = bug(bug_id="b2", find="return min(value, high)\n", replace="return min(value, high + 1)\n")
+    built, gt = build(tmp_path, path, recipe(commit, [b1, b2]))
+    problems = check_separation(gt)
+    assert problems == ["b1 and b2 in lib.py are 4 lines apart (< 10)"]
+    assert check_separation(gt.model_copy(update={"bugs": gt.bugs[:1]})) == []
+
+
+def test_check7_needs_two_files_for_items_3_and_4(tmp_path, repo):
+    path, commit = repo
+    built, gt = build(tmp_path, path, recipe(commit, [bug()], item_id="item_003"))
+    assert check_separation(gt) == ["bugs are in 1 file(s), need at least 2"]
+
+
+def test_check8_oracle_passes_for_single_line_range(tmp_path, repo):
+    path, commit = repo
+    built, gt = build(tmp_path, path, recipe(commit, [bug()]))
+    item_dir = write_item(tmp_path, built, gt)
+    assert check_oracle(item_dir, gt, texts(built)) == []
+
+
+def test_check8_oracle_fails_for_range_that_survives_the_shift(tmp_path, repo):
+    path, commit = repo
+    b = bug(
+        find="return min(value, high)\n", replace="result = min(value, high)\n    return result\n"
+    )
+    built, gt = build(tmp_path, path, recipe(commit, [b]))
+    assert (gt.bugs[0].line_start, gt.bugs[0].line_end) == (10, 11)
+    item_dir = write_item(tmp_path, built, gt)
+    problems = check_oracle(item_dir, gt, texts(built))
+    assert problems == ["oracle shifted by +4 lines still has 1 strict hit(s)"]
+
+
+# --- check 10: no give-aways -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("word", ["bug", "Planted", "INJECT", "todo", "hack", "wrong", "xxx"])
+def test_check10_flags_hint_words(word):
+    r = recipe("a" * 40, [bug(replace=f"if value <= low_{word}:\n")])
+    assert any("replace contains" in p for p in check_giveaways(r))
+
+
+def test_check10_allows_word_already_in_find():
+    r = recipe("a" * 40, [bug(find="if debug < low:\n", replace="if debug <= low:\n")])
+    assert check_giveaways(r) == []
+
+
+def test_check10_flags_added_comment_line_and_inline_comment():
+    full = recipe("a" * 40, [bug(replace="# check boundary\nif value <= low:\n")])
+    assert any("adds comment line" in p for p in check_giveaways(full))
+    inline = recipe("a" * 40, [bug(replace="if value <= low:  # boundary\n")])
+    assert any("inline comment" in p for p in check_giveaways(inline))
+
+
+def test_check10_tokenizes_planted_file_for_new_comments(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug(replace="if value <= low:  # boundary\n")])
+    built, _ = build(tmp_path, path, r)
+    problems = check_giveaways(r, built.plant)
+    assert any("planted file has new comments ['# boundary']" in p for p in problems)
+
+
+def test_check10_clean_plant_passes(tmp_path, repo):
+    path, commit = repo
+    r = recipe(commit, [bug()])
+    built, _ = build(tmp_path, path, r)
+    assert check_giveaways(r, built.plant) == []
+
+
+# --- check 11: secrets safe to push ----------------------------------------------------------
+
+
+def _secret_bug(value: str):
+    return bug(
+        kind="hardcoded_secret",
+        find="if value < low:\n",
+        replace=f'if value < low and connect(password="{value}"):\n',
+    )
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "AK" + "IA" + "ABCDEFGHIJKLMNOP",
+        "gh" + "p_" + "a1" * 18,
+        "github" + "_pat_" + "11ABCDEFG" * 3,
+        "sk" + "_live_" + "abcdef123456",
+        "rk" + "_" + "abcdef",
+        "xo" + "xb-" + "1234-abcd",
+        "AI" + "za" + "SyA1234567890abcdef",
+        "sk" + "-proj-" + "a" * 30,
+        "sk" + "-ant-" + "api03-xyz",
+        "-----BEGIN RSA " + "PRIVATE KEY-----",
+    ],
+)
+def test_check11_flags_provider_formats(token):
+    problems = check_secrets(recipe("a" * 40, [_secret_bug(token)]))
+    assert any("token format" in p for p in problems), problems
+
+
+def test_check11_accepts_generic_random_secret():
+    assert check_secrets(recipe("a" * 40, [_secret_bug(secrets.token_hex(16))])) == []
+
+
+def test_check11_hardcoded_secret_must_add_a_literal():
+    b = bug(kind="hardcoded_secret", find="if value < low:\n", replace="if value < LOW:\n")
+    assert check_secrets(recipe("a" * 40, [b])) == [
+        "b1: hardcoded_secret plant adds no string literal"
+    ]
+
+
+def test_check11_applies_to_every_kind():
+    token = "gh" + "p_" + "Z9" * 18
+    b = bug(replace=f'if value <= low or name == "{token}":\n')
+    assert any("github_token" in p for p in check_secrets(recipe("a" * 40, [b])))

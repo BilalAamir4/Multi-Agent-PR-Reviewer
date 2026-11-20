@@ -1,0 +1,38 @@
+{
+  "item_id": "item_005",
+  "repo": "sqlite-utils",
+  "upstream_commit": "07b603e562af19f80c3d00eb59b9cf29331127ce",
+  "parent": "a00ed60efc3a242de38f666bc4ce1e431f86dcea",
+  "pr_title": "Preserve duplicate column names in query results",
+  "pr_body": "Queries returning duplicate column names - e.g. joins between tables\nsharing column names - silently lost values because rows were built\nwith dict(zip(keys, row)), where the last duplicate wins.\n\nLater occurrences are now renamed with a numeric suffix: id, id\nbecomes id, id_2 - skipping any suffix that would collide with a\nreal column in the same query.\n\nThe new utils.dedupe_keys() helper transforms the key list once per\nquery, so the per-row dict construction is unchanged and there is no\nmeasurable performance impact.\n\nApplied in Database.query() (including the PRAGMA and RETURNING\npaths), Table.rows_where(), Table.search() and the CLI's JSON output.\nCSV, TSV and table output keep the original duplicate headers.\n\nCloses #624",
+  "bucket": "large",
+  "py_files_changed": 8,
+  "lines_changed": 132,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "9f8b3069ea5cafcb0e551330a90b57fcc1bf8dcc7dadce5458b344b0127b142e",
+  "tests_original": {
+    "passed": 1199,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.53,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1199 passed, 16 skipped, 32 warnings in 7.53s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1199,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.87,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1199 passed, 16 skipped, 32 warnings in 7.87s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

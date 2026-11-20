@@ -1,0 +1,29 @@
+# sqlite-utils: "drop-index command and table.drop_index(index_name)"
+# 4 changed .py files (stage 4's timing test uses this item).
+item_id: item_003
+repo: sqlite-utils
+commit: 7a52214624ae0e2c3fdf07215c1bcfc1393dbd93
+expected_bucket: medium
+is_clean: false
+bugs:
+  - bug_id: b1
+    kind: sql_injection
+    file: sqlite_utils/db.py
+    find: |
+      self.db.execute("DROP INDEX {}".format(quote_identifier(index_name)))
+    replace: |
+      self.db.execute("DROP INDEX {}".format(index_name))
+    description: >-
+      Table.drop_index formats the index name into the DROP INDEX statement without
+      quote_identifier, so a name containing spaces, quotes or SQL syntax is interpreted as SQL
+      instead of as one identifier.
+  - bug_id: b2
+    kind: ineffective_test
+    file: tests/test_create.py
+    # The second assertion line also appears in test_drop_index, so the find text starts on
+    # the line before it to be unique.
+    find: "    cats.drop_index(\"idx_dogs_name\")\n    assert [index.name for index in dogs.indexes] == [\"idx_dogs_name\"]\n"
+    replace: "    cats.drop_index(\"idx_dogs_name\")\n    assert [index.name for index in cats.indexes] == []\n"
+    description: >-
+      test_drop_index_wrong_table asserts that cats has no indexes instead of checking that the
+      dogs index survived the drop on the wrong table, so it no longer tests that behaviour.

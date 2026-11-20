@@ -1,0 +1,30 @@
+{
+  "item_id": "item_003",
+  "source_repo": "simonw/sqlite-utils",
+  "base_commit": "d302835d57bcf53c36c0dc67356ec292f55a5931",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "sqlite_utils/db.py",
+      "line_start": 3096,
+      "line_end": 3096,
+      "kind": "sql_injection",
+      "accepted_kinds": [
+        "sql_injection"
+      ],
+      "description": "Table.drop_index formats the index name into the DROP INDEX statement without quote_identifier, so a name containing spaces, quotes or SQL syntax is interpreted as SQL instead of as one identifier."
+    },
+    {
+      "bug_id": "b2",
+      "file": "tests/test_create.py",
+      "line_start": 837,
+      "line_end": 837,
+      "kind": "ineffective_test",
+      "accepted_kinds": [
+        "ineffective_test"
+      ],
+      "description": "test_drop_index_wrong_table asserts that cats has no indexes instead of checking that the dogs index survived the drop on the wrong table, so it no longer tests that behaviour."
+    }
+  ]
+}
