@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveInt, model_validator
 
 
 class SpawnConfig(BaseModel):
@@ -16,10 +16,27 @@ class SpawnConfig(BaseModel):
     max_specialist_prompt_tokens: PositiveInt
 
 
+class AgentLimits(BaseModel):
+    """Call limits for one agent (plan § Production concerns). Reaching one ends the review
+    cleanly with status ``limit_reached`` (decision 0007)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_model_calls: PositiveInt
+    max_tool_calls: PositiveInt
+
+
+class LimitsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    single: AgentLimits
+
+
 class ReviewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spawn: SpawnConfig
+    limits: LimitsConfig
 
 
 def repo_root() -> Path:
@@ -50,6 +67,9 @@ class ModelSpec(BaseModel):
     rpd: PositiveInt | None  # requests per day
     tpd: PositiveInt | None  # tokens per day (Groq only)
     tool_calling: bool | Literal["unknown"]
+    # USD per million tokens, for cost estimates only (D5); set on the evaluation model.
+    price_input_per_mtok: NonNegativeFloat | None = None
+    price_output_per_mtok: NonNegativeFloat | None = None
 
 
 class Chains(BaseModel):
@@ -59,6 +79,7 @@ class Chains(BaseModel):
 
     orchestrator: list[str]
     specialist: list[str]
+    single: list[str]  # stage 1 baseline reviewer
     worker: list[str]
     verifier: list[str]
 

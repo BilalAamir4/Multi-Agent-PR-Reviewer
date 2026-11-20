@@ -3,13 +3,30 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from reviewer.config import SpawnConfig, load_review_config, repo_root, should_spawn
+from reviewer.config import (
+    AgentLimits,
+    SpawnConfig,
+    load_review_config,
+    repo_root,
+    should_spawn,
+)
+
+SPAWN = "spawn:\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\n"
+LIMITS = "limits:\n  single:\n    max_model_calls: 25\n    max_tool_calls: 40\n"
+
+
+def _review_yaml(tmp_path: Path, text: str) -> Path:
+    p = tmp_path / "review.yaml"
+    p.write_text(text, encoding="utf-8")
+    return p
 
 
 def test_real_file_loads():
     cfg = load_review_config()
     assert cfg.spawn.min_py_files == 4
     assert cfg.spawn.max_specialist_prompt_tokens == 30000
+    assert cfg.limits.single.max_model_calls == 25
+    assert cfg.limits.single.max_tool_calls == 40
 
 
 def test_default_path_is_independent_of_cwd(tmp_path, monkeypatch):
@@ -19,21 +36,13 @@ def test_default_path_is_independent_of_cwd(tmp_path, monkeypatch):
 
 
 def test_unknown_key_rejected(tmp_path: Path):
-    p = tmp_path / "review.yaml"
-    p.write_text(
-        "spawn:\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\n  extra: 1\n",
-        encoding="utf-8",
-    )
+    p = _review_yaml(tmp_path, SPAWN + "  extra: 1\n" + LIMITS)
     with pytest.raises(ValidationError):
         load_review_config(p)
 
 
 def test_unknown_top_level_key_rejected(tmp_path: Path):
-    p = tmp_path / "review.yaml"
-    p.write_text(
-        "spawn:\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\nother: 1\n",
-        encoding="utf-8",
-    )
+    p = _review_yaml(tmp_path, SPAWN + LIMITS + "other: 1\n")
     with pytest.raises(ValidationError):
         load_review_config(p)
 
@@ -51,3 +60,26 @@ def test_non_positive_rejected(bad):
 def test_should_spawn(files, tokens, expected):
     cfg = SpawnConfig(min_py_files=4, max_specialist_prompt_tokens=30000)
     assert should_spawn(files, tokens, cfg) is expected
+
+
+def test_valid_limits_load(tmp_path: Path):
+    cfg = load_review_config(_review_yaml(tmp_path, SPAWN + LIMITS))
+    assert cfg.limits.single == AgentLimits(max_model_calls=25, max_tool_calls=40)
+
+
+def test_missing_limits_rejected(tmp_path: Path):
+    with pytest.raises(ValidationError):
+        load_review_config(_review_yaml(tmp_path, SPAWN))
+
+
+def test_unknown_limit_key_rejected(tmp_path: Path):
+    with pytest.raises(ValidationError):
+        load_review_config(_review_yaml(tmp_path, SPAWN + LIMITS + "    max_tokens: 5\n"))
+
+
+@pytest.mark.parametrize("bad", [0, -3])
+def test_non_positive_limits_rejected(bad):
+    with pytest.raises(ValidationError):
+        AgentLimits(max_model_calls=bad, max_tool_calls=40)
+    with pytest.raises(ValidationError):
+        AgentLimits(max_model_calls=25, max_tool_calls=bad)

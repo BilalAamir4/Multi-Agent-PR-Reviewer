@@ -2,3 +2,9 @@
 spawn:
   min_py_files: 4
   max_specialist_prompt_tokens: 30000
+# Per-agent limits. Reaching one ends the review cleanly as limit_reached (decision 0007).
+# limits.single is frozen for the "One agent" row from the stage 1B baseline on.
+limits:
+  single:
+    max_model_calls: 25
+    max_tool_calls: 40

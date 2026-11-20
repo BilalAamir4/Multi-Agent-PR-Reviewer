@@ -67,3 +67,32 @@ def test_unknown_key_rejected(tmp_path: Path):
     data["models"]["gemini-3.1-flash-lite"]["extra"] = 1
     with pytest.raises(ValidationError):
         load_models_config(_write(tmp_path, data))
+
+
+def test_single_chain_matches_specialist():
+    cfg = load_models_config()
+    assert cfg.chains.single == cfg.chains.specialist
+
+
+def test_prices_only_on_evaluation_model():
+    cfg = load_models_config()
+    for name, spec in cfg.models.items():
+        priced = (spec.price_input_per_mtok, spec.price_output_per_mtok)
+        if name == cfg.evaluation.model:
+            assert priced == (0.25, 1.50)
+        else:
+            assert priced == (None, None)
+
+
+def test_negative_price_rejected(tmp_path: Path):
+    data = _real_data()
+    data["models"]["gemini-3.1-flash-lite"]["price_input_per_mtok"] = -1
+    with pytest.raises(ValidationError):
+        load_models_config(_write(tmp_path, data))
+
+
+def test_unknown_model_in_single_chain_rejected(tmp_path: Path):
+    data = _real_data()
+    data["chains"]["single"] = ["no-such-model"]
+    with pytest.raises(ValidationError, match="unknown model 'no-such-model'"):
+        load_models_config(_write(tmp_path, data))

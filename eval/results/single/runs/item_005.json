@@ -1,0 +1,85 @@
+{
+  "result": {
+    "status": "complete",
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request introduces a `dedupe_keys` utility function to handle duplicate column names in SQL query results by appending numeric suffixes to later occurrences. This ensures that when query results are converted to dictionaries, no data is lost due to key collisions. The change is applied consistently across the library's database query methods and the CLI's JSON output, while preserving original headers for other formats like CSV.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40
+    },
+    "evaluation": true,
+    "item_id": "item_005",
+    "model_calls": 9,
+    "tool_calls": 8,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 2,
+      "read_file": 4,
+      "search_code": 1
+    },
+    "input_tokens": 40124,
+    "output_tokens": 293,
+    "duration_s": 52.109,
+    "wait_s": 37.516,
+    "net_duration_s": 14.593,
+    "waits_by_reason": {
+      "rate_limiter": 37.516
+    },
+    "langsmith_run_id": "3921bdf3-ff90-4c37-8a7d-6d91d40e746c",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "3921bdf3-ff90-4c37-8a7d-6d91d40e746c",
+        "model_calls": 9,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 2,
+          "read_file": 4,
+          "search_code": 1
+        },
+        "input_tokens": 40124,
+        "output_tokens": 293,
+        "outcome": "complete"
+      }
+    ]
+  },
+  "run_log": [
+    {
+      "started_at": "2026-11-20T20:32:20+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 9,
+      "tool_calls": 8,
+      "input_tokens": 40124,
+      "output_tokens": 293,
+      "duration_s": 52.109,
+      "wait_s": 37.516,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "3921bdf3-ff90-4c37-8a7d-6d91d40e746c",
+          "model_calls": 9,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 2,
+            "read_file": 4,
+            "search_code": 1
+          },
+          "input_tokens": 40124,
+          "output_tokens": 293,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

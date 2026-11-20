@@ -1,0 +1,19 @@
+{
+  "note": "Synthetic development fixture (stage 1B). Not part of the evaluation dataset.",
+  "defects": [
+    {
+      "file": "shop/catalog.py",
+      "line_start": 36,
+      "line_end": 36,
+      "kind": "off_by_one",
+      "description": "page() slices to start + size - 1, so every page has one product too few."
+    },
+    {
+      "file": "shop/cart.py",
+      "line_start": 22,
+      "line_end": 23,
+      "kind": "missing_none_check",
+      "description": "apply_coupon() reads coupon.percent although find() returns None for an unknown code."
+    }
+  ]
+}

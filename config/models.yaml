@@ -49,6 +49,9 @@ models:
     rpd: 500
     tpd: null
     tool_calling: true
+    # D5 estimate; check the console price
+    price_input_per_mtok: 0.25
+    price_output_per_mtok: 1.50
   # Group C. Groq: 30 RPM, 8K TPM, 1K RPD, 200K TPD
   openai/gpt-oss-120b:
     provider: groq
@@ -115,6 +118,11 @@ chains: # normal runs only (routing doc "Chains by role")
     - gemini-3.1-flash-lite
     - gemma-4-31b-it
     - openai/gpt-oss-120b # only if the prompt fits its 8K TPM; the router checks tpm
+  single: # stage 1 baseline: same models and order as specialist (large context, tool calls)
+    - gemini-3.5-flash-lite
+    - gemini-3.1-flash-lite
+    - gemma-4-31b-it
+    - openai/gpt-oss-120b
   worker:
     - gemini-3.1-flash-lite
     - openai/gpt-oss-120b

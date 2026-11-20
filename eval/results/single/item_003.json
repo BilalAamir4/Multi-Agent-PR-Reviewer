@@ -1,0 +1,19 @@
+{
+  "item_id": "item_003",
+  "config": "single",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 3096,
+      "line_end": 3096,
+      "category": "other",
+      "severity": "medium",
+      "confidence": 0.9,
+      "title": "Potential SQL injection in drop_index",
+      "explanation": "The `drop_index` method uses `self.db.execute(\"DROP INDEX {}\".format(index_name))` which is vulnerable to SQL injection if `index_name` is not properly quoted. While `index_name` is checked against existing indexes, it is still safer to use `quote_identifier` as done elsewhere in the codebase.",
+      "evidence": "        self.db.execute(\"DROP INDEX {}\".format(index_name))",
+      "agent": "single",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

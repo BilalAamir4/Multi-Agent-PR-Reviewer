@@ -1,0 +1,246 @@
+diff --git a/pr.diff.out b/pr.diff.out
+new file mode 100644
+index 0000000..39c9df8
+--- /dev/null
++++ b/pr.diff.out
+@@ -0,0 +1,121 @@
++diff --git a/shop/cart.py b/shop/cart.py
++index 9592f93..8d585db 100644
++--- a/shop/cart.py
+++++ b/shop/cart.py
++@@ -1,9 +1,13 @@
++ """A shopping cart over a catalog."""
++ 
+++from shop.coupons import CouponBook
+++
++ 
++ class Cart:
++-    def __init__(self, catalog):
+++    def __init__(self, catalog, coupons=None):
++         self.catalog = catalog
+++        self.coupons = coupons if coupons is not None else CouponBook()
+++        self.coupon = None
++         self.lines = {}
++ 
++     def add(self, sku, quantity=1):
++@@ -13,8 +17,22 @@ class Cart:
++             raise KeyError(sku)
++         self.lines[sku] = self.lines.get(sku, 0) + quantity
++ 
++-    def total_cents(self):
+++    def apply_coupon(self, code):
+++        """Use the coupon with this code. Unknown codes are ignored; returns True if applied."""
+++        coupon = self.coupons.find(code)
+++        if coupon.percent > 0:
+++            self.coupon = coupon
+++            return True
+++        return False
+++
+++    def subtotal_cents(self):
++         total = 0
++         for sku, quantity in self.lines.items():
++             total += self.catalog.find(sku).price_cents * quantity
++         return total
+++
+++    def total_cents(self):
+++        total = self.subtotal_cents()
+++        if self.coupon is not None:
+++            total -= total * self.coupon.percent // 100
+++        return total
++diff --git a/shop/catalog.py b/shop/catalog.py
++index 8b2408d..fcfc829 100644
++--- a/shop/catalog.py
+++++ b/shop/catalog.py
++@@ -26,3 +26,15 @@ class Catalog:
++     def all(self):
++         """Every product, sorted by sku."""
++         return [self._products[k] for k in sorted(self._products)]
+++
+++    def page(self, number, size):
+++        """Products on page ``number`` (1-based) with ``size`` products per page, by sku."""
+++        if number < 1 or size < 1:
+++            raise ValueError("number and size must be at least 1")
+++        products = self.all()
+++        start = (number - 1) * size
+++        return products[start : start + size - 1]
+++
+++    def page_count(self, size):
+++        """How many pages of ``size`` products the catalog fills."""
+++        return -(-len(self._products) // size)
++diff --git a/shop/coupons.py b/shop/coupons.py
++new file mode 100644
++index 0000000..c30f27a
++--- /dev/null
+++++ b/shop/coupons.py
++@@ -0,0 +1,22 @@
+++"""Percentage-off coupons."""
+++
+++from dataclasses import dataclass
+++
+++
+++@dataclass(frozen=True)
+++class Coupon:
+++    code: str
+++    percent: int
+++
+++
+++class CouponBook:
+++    def __init__(self, coupons=()):
+++        self._coupons = {}
+++        for coupon in coupons:
+++            if not 0 < coupon.percent <= 100:
+++                raise ValueError(f"bad percent for {coupon.code!r}")
+++            self._coupons[coupon.code.upper()] = coupon
+++
+++    def find(self, code):
+++        """The coupon for this code (case-insensitive), or None if there is none."""
+++        return self._coupons.get(code.strip().upper())
++diff --git a/tests/test_cart.py b/tests/test_cart.py
++index 3937114..abe4797 100644
++--- a/tests/test_cart.py
+++++ b/tests/test_cart.py
++@@ -2,6 +2,7 @@ import pytest
++ 
++ from shop.cart import Cart
++ from shop.catalog import Catalog, Product
+++from shop.coupons import Coupon, CouponBook
++ 
++ 
++ def make_catalog():
++@@ -19,3 +20,17 @@ def test_unknown_sku():
++     cart = Cart(make_catalog())
++     with pytest.raises(KeyError):
++         cart.add("zzz")
+++
+++
+++def test_coupon_discount():
+++    coupons = CouponBook([Coupon("SAVE10", 10)])
+++    cart = Cart(make_catalog(), coupons)
+++    cart.add("b", 2)
+++    assert cart.apply_coupon("save10") is True
+++    assert cart.total_cents() == 360
+++
+++
+++def test_first_page():
+++    catalog = make_catalog()
+++    assert catalog.page_count(1) == 2
+++    assert catalog.page(1, 1)[0].sku in ("a", "b") or catalog.page(1, 1) == []
+diff --git a/shop/cart.py b/shop/cart.py
+index 9592f93..8d585db 100644
+--- a/shop/cart.py
++++ b/shop/cart.py
+@@ -1,9 +1,13 @@
+ """A shopping cart over a catalog."""
+ 
++from shop.coupons import CouponBook
++
+ 
+ class Cart:
+-    def __init__(self, catalog):
++    def __init__(self, catalog, coupons=None):
+         self.catalog = catalog
++        self.coupons = coupons if coupons is not None else CouponBook()
++        self.coupon = None
+         self.lines = {}
+ 
+     def add(self, sku, quantity=1):
+@@ -13,8 +17,22 @@ class Cart:
+             raise KeyError(sku)
+         self.lines[sku] = self.lines.get(sku, 0) + quantity
+ 
+-    def total_cents(self):
++    def apply_coupon(self, code):
++        """Use the coupon with this code. Unknown codes are ignored; returns True if applied."""
++        coupon = self.coupons.find(code)
++        if coupon.percent > 0:
++            self.coupon = coupon
++            return True
++        return False
++
++    def subtotal_cents(self):
+         total = 0
+         for sku, quantity in self.lines.items():
+             total += self.catalog.find(sku).price_cents * quantity
+         return total
++
++    def total_cents(self):
++        total = self.subtotal_cents()
++        if self.coupon is not None:
++            total -= total * self.coupon.percent // 100
++        return total
+diff --git a/shop/catalog.py b/shop/catalog.py
+index 8b2408d..fcfc829 100644
+--- a/shop/catalog.py
++++ b/shop/catalog.py
+@@ -26,3 +26,15 @@ class Catalog:
+     def all(self):
+         """Every product, sorted by sku."""
+         return [self._products[k] for k in sorted(self._products)]
++
++    def page(self, number, size):
++        """Products on page ``number`` (1-based) with ``size`` products per page, by sku."""
++        if number < 1 or size < 1:
++            raise ValueError("number and size must be at least 1")
++        products = self.all()
++        start = (number - 1) * size
++        return products[start : start + size - 1]
++
++    def page_count(self, size):
++        """How many pages of ``size`` products the catalog fills."""
++        return -(-len(self._products) // size)
+diff --git a/shop/coupons.py b/shop/coupons.py
+new file mode 100644
+index 0000000..c30f27a
+--- /dev/null
++++ b/shop/coupons.py
+@@ -0,0 +1,22 @@
++"""Percentage-off coupons."""
++
++from dataclasses import dataclass
++
++
++@dataclass(frozen=True)
++class Coupon:
++    code: str
++    percent: int
++
++
++class CouponBook:
++    def __init__(self, coupons=()):
++        self._coupons = {}
++        for coupon in coupons:
++            if not 0 < coupon.percent <= 100:
++                raise ValueError(f"bad percent for {coupon.code!r}")
++            self._coupons[coupon.code.upper()] = coupon
++
++    def find(self, code):
++        """The coupon for this code (case-insensitive), or None if there is none."""
++        return self._coupons.get(code.strip().upper())
+diff --git a/tests/test_cart.py b/tests/test_cart.py
+index 3937114..09ee4ae 100644
+--- a/tests/test_cart.py
++++ b/tests/test_cart.py
+@@ -2,6 +2,7 @@ import pytest
+ 
+ from shop.cart import Cart
+ from shop.catalog import Catalog, Product
++from shop.coupons import Coupon, CouponBook
+ 
+ 
+ def make_catalog():
+@@ -19,3 +20,15 @@ def test_unknown_sku():
+     cart = Cart(make_catalog())
+     with pytest.raises(KeyError):
+         cart.add("zzz")
++
++
++def test_coupon_discount():
++    coupons = CouponBook([Coupon("SAVE10", 10)])
++    cart = Cart(make_catalog(), coupons)
++    cart.add("b", 2)
++    assert cart.apply_coupon("save10") is True
++    assert cart.total_cents() == 360
++
++
++def test_page_count():
++    assert make_catalog().page_count(1) == 2

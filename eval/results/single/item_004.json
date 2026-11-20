@@ -1,0 +1,19 @@
+{
+  "item_id": "item_004",
+  "config": "single",
+  "findings": [
+    {
+      "file": "src/click/types.py",
+      "line_start": 300,
+      "line_end": 301,
+      "category": "missing_none_check",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "Missing None check for ctx in normalize_choice",
+      "explanation": "The `normalize_choice` method accesses `ctx.token_normalize_func` without checking if `ctx` is `None`. While `ctx` is often provided, it can be `None` in some contexts (e.g., when `convert` is called with `ctx=None`), which will cause an `AttributeError`. The `convert` method itself passes `ctx` to `normalize_choice`, and `ctx` can be `None` there.",
+      "evidence": "        if ctx.token_normalize_func is not None:\n            normed_value = ctx.token_normalize_func(normed_value)",
+      "agent": "single",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}
