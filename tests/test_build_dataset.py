@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from eval.build_dataset import (
     PlantError,
     Recipe,
+    accepted_kinds_for,
     apply_plants,
     enclosing_test,
     line_of,
@@ -124,6 +125,58 @@ def test_recipe_validation():
     data = {**recipe("a" * 40, [bug()]).model_dump(), "is_clean": True}
     with pytest.raises(ValidationError, match="is_clean"):
         Recipe.model_validate(data)
+
+
+def test_extra_accepted_kinds_need_a_reason():
+    with pytest.raises(ValidationError, match="extra_accepted_reason is required"):
+        bug(extra_accepted_kinds=["missing_none_check"])
+    with pytest.raises(ValidationError, match="extra_accepted_reason is required"):
+        bug(extra_accepted_kinds=["missing_none_check"], extra_accepted_reason="  ")
+    with pytest.raises(ValidationError, match="only allowed with extra_accepted_kinds"):
+        bug(extra_accepted_reason="Why.")
+
+
+@pytest.mark.parametrize(
+    "kinds", [["other"], ["off_by_one"], ["missing_none_check", "missing_none_check"]]
+)
+def test_extra_accepted_kinds_rejects_other_own_kind_and_duplicates(kinds):
+    # bug() defaults to kind off_by_one
+    with pytest.raises(ValidationError):
+        bug(extra_accepted_kinds=kinds, extra_accepted_reason="Why.")
+
+
+def test_accepted_kinds_for_appends_extras_in_order():
+    b = bug(
+        kind="missing_none_check",
+        extra_accepted_kinds=["wrong_comparison", "unhandled_exception"],
+        extra_accepted_reason="Why.",
+    )
+    # unhandled_exception already comes from the D8a group, so it is not repeated.
+    assert accepted_kinds_for(b) == [
+        "missing_none_check",
+        "unhandled_exception",
+        "wrong_comparison",
+    ]
+    assert accepted_kinds_for(bug()) == ["off_by_one"]
+
+
+def test_tests_key_ignores_accepted_kinds(monkeypatch):
+    from eval import build_dataset
+
+    tests_key = build_dataset.tests_key
+
+    class Spec:
+        image = "img"
+        test_command = ["pytest"]
+
+    monkeypatch.setattr(build_dataset, "get_repo", lambda name: Spec)
+    plain = recipe("a" * 40, [bug()])
+    extra = recipe(
+        "a" * 40,
+        [bug(extra_accepted_kinds=["wrong_comparison"], extra_accepted_reason="Why.")],
+    )
+    assert tests_key(plain, "diff") == tests_key(extra, "diff")
+    assert tests_key(plain, "diff") != tests_key(recipe("a" * 40, [bug(replace="x\n")]), "diff")
 
 
 def test_enclosing_test():

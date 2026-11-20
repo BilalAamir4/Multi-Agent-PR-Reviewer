@@ -17,3 +17,6 @@ bugs:
     description: >-
       Nested tests the truthiness of many instead of comparing it with None, so an explicit
       many=False never overrides a nested Schema instance created with many=True.
+    extra_accepted_kinds: [missing_none_check]
+    extra_accepted_reason: >-
+      The defect confuses "falsy" with "is None", so either label describes it.

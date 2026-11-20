@@ -112,11 +112,35 @@ class BugRecipe(BaseModel):
     find: str = Field(min_length=1)
     replace: str
     description: str = Field(min_length=1)
+    # Per-bug extra accepted kinds (decision 0005). Each bug that uses them needs a reason and an
+    # entry in docs/decisions/0005-per-bug-accepted-kinds.md (check 12). ``other`` is not a
+    # PlantKind, so it can never be added.
+    extra_accepted_kinds: list[PlantKind] = Field(default_factory=list)
+    extra_accepted_reason: str | None = None
 
     @field_validator("file")
     @classmethod
     def _check_file(cls, v: str) -> str:
         return validate_posix_path(v)
+
+    @model_validator(mode="after")
+    def _check_extra_kinds(self) -> Self:
+        if self.extra_accepted_kinds:
+            if self.extra_accepted_reason is None or not self.extra_accepted_reason.strip():
+                raise ValueError("extra_accepted_reason is required with extra_accepted_kinds")
+            if self.kind in self.extra_accepted_kinds:
+                raise ValueError("extra_accepted_kinds must not repeat the bug's own kind")
+            if len(set(self.extra_accepted_kinds)) != len(self.extra_accepted_kinds):
+                raise ValueError("extra_accepted_kinds must not contain duplicates")
+        elif self.extra_accepted_reason is not None:
+            raise ValueError("extra_accepted_reason is only allowed with extra_accepted_kinds")
+        return self
+
+
+def accepted_kinds_for(bug: BugRecipe) -> list[str]:
+    """``default_accepted_kinds(kind)`` followed by the bug's extra kinds, without duplicates and
+    in that order (decision 0005)."""
+    return list(dict.fromkeys([*default_accepted_kinds(bug.kind), *bug.extra_accepted_kinds]))
 
 
 class Recipe(BaseModel):
@@ -475,7 +499,7 @@ def ground_truth_for(recipe: Recipe, slug: str, parent: str, ranges: dict) -> Gr
                 line_start=ranges[b.bug_id][0],
                 line_end=ranges[b.bug_id][1],
                 kind=b.kind,
-                accepted_kinds=default_accepted_kinds(b.kind),
+                accepted_kinds=accepted_kinds_for(b),
                 description=b.description,
             )
             for b in recipe.bugs
@@ -519,6 +543,9 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_SCORING_ONLY_FIELDS = {"extra_accepted_kinds", "extra_accepted_reason"}
+
+
 def tests_key(recipe: Recipe, pr_diff: str) -> str:
     spec = get_repo(recipe.repo)
     payload = {
@@ -526,7 +553,9 @@ def tests_key(recipe: Recipe, pr_diff: str) -> str:
         "test_command": spec.test_command,
         "commit": recipe.commit,
         "pr_diff": _sha256(pr_diff.encode("utf-8")),
-        "bugs": [b.model_dump() for b in recipe.bugs],
+        # Accepted kinds do not change what runs in the sandbox, so they are left out of the key;
+        # adding or editing them never re-runs the tests.
+        "bugs": [b.model_dump(exclude=_SCORING_ONLY_FIELDS) for b in recipe.bugs],
     }
     return _sha256(json.dumps(payload, sort_keys=True).encode("utf-8"))
 

@@ -10,6 +10,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
 - D1 to D12 are **locked** (`docs/decisions/0001-locked-decisions.md`). A change needs a new
   numbered record in `docs/decisions/` naming the decision it replaces and why.
 - Scoring interpretations: `docs/decisions/0002-scoring-details.md`.
+- Per-bug extra accepted kinds: `docs/decisions/0005-per-bug-accepted-kinds.md`.
+- Router errors, retries, resets and wait accounting: `docs/decisions/0006-router-and-waits.md`.
 - Dataset source repositories, images, eligible commits: `docs/decisions/0004-dataset-source-repos.md`.
 
 ## Environment
@@ -40,7 +42,7 @@ uv run python -m eval.check_repos --narrow <name>  # propose eligible_since for 
 docker build -t <image from eval/repos.yaml> sandbox_images/<name>  # build a repository's image
 uv run python -m eval.build_dataset --all     # build eval/dataset/ from eval/plants/*.yaml (Docker)
 uv run python -m eval.build_dataset <item_id> [--rerun-tests]   # one item; reruns cached tests
-uv run python -m eval.check_dataset [item_id ...] [--no-tests]  # 11 checks per item (Docker)
+uv run python -m eval.check_dataset [item_id ...] [--no-tests]  # 12 checks per item (Docker)
 ```
 
 Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
@@ -71,6 +73,12 @@ run the model checks in loops.
 - `src/reviewer/schemas.py`: `Finding` schema. `src/reviewer/config.py`: `config/review.yaml`
   (D12 spawn limit) and `config/models.yaml` (`load_models_config`).
 - `src/reviewer/sandbox.py`: `run_in_sandbox`, `get_client`, `SandboxUnavailable` (D2, D2b).
+- `src/reviewer/models.py`: `QuotaRouter(config, evaluation=False).run(role, task, prompt_tokens)`
+  calls `task(chat_model, model_id)` and returns `RouterResult(value, model)`; also `classify`,
+  `estimate_tokens`, `review_waits()`, `QuotaTracker` (`quota_state.json`). Decision 0006.
+- `src/reviewer/tools/`: `ReviewContext.from_paths(workspace, diff_path)`, then
+  `make_tools(ctx)` gives `list_changed_files`, `read_diff`, `read_file`, `search_code`,
+  `run_ruff`, `run_bandit` (read-only, strings, `ERROR: ...` on failure; needs `rg` on PATH).
 - `scripts/`: stage 0B environment checks; `scripts/langgraph_check/`: echo graph for `langgraph dev`.
 - `eval/ground_truth.py`: dataset item format. `eval/equivalences.yaml`: D8a groups.
   `eval/score.py`: the matching rule and scorer CLI.
@@ -94,7 +102,8 @@ run the model checks in loops.
 | 0C Dataset source repositories, sandbox images, commit index | done (see decision 0004) |
 | 0D First 5 dataset items (pick commits, plant bugs) | done (see `eval/dataset/README.md`) |
 | **Stage 0** | **complete** |
-| 1 One agent | not started |
+| 1A Model router and review tools, dataset fixes | done (decisions 0005, 0006) |
+| 1B One agent, CLI, evaluation runner, baseline | not started |
 | 2 Calling specialists | not started |
 | 3 A2A | not started |
 | 4 Spawning workers | not started |

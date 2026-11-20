@@ -11,7 +11,8 @@
       "line_end": 554,
       "kind": "wrong_comparison",
       "accepted_kinds": [
-        "wrong_comparison"
+        "wrong_comparison",
+        "missing_none_check"
       ],
       "description": "Nested tests the truthiness of many instead of comparing it with None, so an explicit many=False never overrides a nested Schema instance created with many=True."
     }

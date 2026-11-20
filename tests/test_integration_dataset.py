@@ -33,6 +33,6 @@ def test_check_dataset_all_items():
     failures = []
     for item_id in items:
         results = check_item(item_id)
-        assert len(results) == 11, [r.line(item_id) for r in results]
+        assert [r.number for r in results] == list(range(1, 13)), [r.line(item_id) for r in results]
         failures += [r.line(item_id) for r in results if r.ok is not True]
     assert failures == []

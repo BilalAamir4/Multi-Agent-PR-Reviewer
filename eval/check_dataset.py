@@ -9,7 +9,9 @@ Docker.
 
 The checks, numbered as in the stage 0D brief:
 
-1. schema: ``load_item`` succeeds and the recipe matches the ground truth and ``meta.json``.
+1. schema: ``load_item`` succeeds and the recipe matches the ground truth and ``meta.json``;
+   each bug's ``accepted_kinds`` is ``default_accepted_kinds(kind)`` plus the recipe's
+   ``extra_accepted_kinds`` (no duplicates, never ``other``).
 2. eligibility: the commit is indexed in the expected bucket, not before ``eligible_since``, not a
    sweep.
 3. bucket: ``size_bucket(pr.diff)`` is the expected bucket (item_003: 4 or 5 ``.py`` files).
@@ -20,13 +22,16 @@ The checks, numbered as in the stage 0D brief:
 6. plant_real: each plant changes the file, and the ground-truth range is exactly the changed
    lines (recomputed).
 7. separation: bugs in one file are at least 10 lines apart; item_003 and item_004 use 2+ files.
-8. oracle: a perfect findings set scores strict recall and precision 1.0; shifted by +4 lines it
-   loses every strict hit.
+8. oracle: a perfect findings set scores strict recall and precision 1.0. Moved to start exactly at
+   ``line_end + 4`` (same length) it has no strict hit, and moved to end exactly at
+   ``line_start - 4`` it has none either.
 9. tests: original commit 0 failed / 0 errors; planted version 0 errors (collection, import or
    setup); results agree with ``meta.json``; each ``ineffective_test`` bug's own test passes.
 10. giveaways: no hint words or new comments in ``replace`` text.
 11. secrets: no provider-format token in any ``replace`` text; a ``hardcoded_secret`` plant adds a
     string literal.
+12. extra_kinds: every bug with ``extra_accepted_kinds`` has a row in
+    ``docs/decisions/0005-per-bug-accepted-kinds.md`` naming the item, the bug and each extra kind.
 """
 
 from __future__ import annotations
@@ -44,12 +49,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from eval.build_dataset import (
     PlantError,
     PlantResult,
     Recipe,
+    accepted_kinds_for,
     all_item_ids,
     apply_plants,
     candidate_entry,
@@ -83,12 +89,14 @@ from eval.repos import (
     snapshot_files,
 )
 from eval.score import changed_lines, score_config
+from reviewer.config import repo_root
 from reviewer.schemas import Finding
 
 MIN_BUG_GAP = 10  # lines between bugs in the same file
 MIN_FILES = {"item_003": 2, "item_004": 2}
 PY_FILE_RANGE = {"item_003": (4, 5)}  # stage 4's timing test needs 4 or 5 .py files
-ORACLE_SHIFT = 4
+ORACLE_SHIFT = 4  # one more than LINE_TOLERANCE in eval/score.py
+EXTRA_KINDS_RECORD = PurePosixPath("docs/decisions/0005-per-bug-accepted-kinds.md")
 
 GIVEAWAY_WORDS = (
     "bug", "planted", "inject", "vuln", "fixme", "todo", "xxx", "hack", "oops", "wrong",
@@ -294,16 +302,44 @@ def check_separation(gt: GroundTruth) -> list[str]:
     return problems
 
 
-def oracle_findings(gt: GroundTruth, planted_texts: dict[str, str], shift: int = 0) -> list:
+type Placement = Literal["exact", "after", "before"]
+
+
+def oracle_range(line_start: int, line_end: int, placement: Placement) -> tuple[int, int] | None:
+    """The oracle finding's range for a bug at ``line_start``..``line_end``.
+
+    ``exact``: the bug's range. ``after``: the same length, starting exactly at
+    ``line_end + ORACLE_SHIFT``. ``before``: the same length, ending exactly at
+    ``line_start - ORACLE_SHIFT``; the start is clamped to line 1, and None is returned when even
+    the end would be before line 1 (no finding can be placed there).
+    """
+    length = line_end - line_start
+    if placement == "exact":
+        return line_start, line_end
+    if placement == "after":
+        start = line_end + ORACLE_SHIFT
+        return start, start + length
+    end = line_start - ORACLE_SHIFT
+    if end < 1:
+        return None
+    return max(1, end - length), end
+
+
+def oracle_findings(
+    gt: GroundTruth, planted_texts: dict[str, str], placement: Placement = "exact"
+) -> list:
     out = []
     for b in gt.bugs:
+        rng = oracle_range(b.line_start, b.line_end, placement)
+        if rng is None:
+            continue
         lines = split_lines(planted_texts[b.file])
         evidence = "".join(lines[b.line_start - 1 : b.line_end]) or lines[b.line_start - 1]
         out.append(
             Finding(
                 file=b.file,
-                line_start=b.line_start + shift,
-                line_end=b.line_end + shift,
+                line_start=rng[0],
+                line_end=rng[1],
                 category=b.kind,
                 severity="high",
                 confidence=1.0,
@@ -340,11 +376,72 @@ def check_oracle(item_dir: Path, gt: GroundTruth, planted_texts: dict[str, str])
     s = report["aggregates"]["strict"]["all"]
     if s["recall"] != 1.0 or s["precision"] != 1.0:
         problems.append(f"oracle recall={s['recall']} precision={s['precision']} (need 1.0)")
-    shifted = oracle_score(item_dir, gt, oracle_findings(gt, planted_texts, ORACLE_SHIFT))
-    hits = shifted["aggregates"]["strict"]["all"]["tp"]
-    if hits:
-        problems.append(f"oracle shifted by +{ORACLE_SHIFT} lines still has {hits} strict hit(s)")
+    for placement, where in (
+        ("after", f"to start at line_end + {ORACLE_SHIFT}"),
+        ("before", f"to end at line_start - {ORACLE_SHIFT}"),
+    ):
+        moved = oracle_score(item_dir, gt, oracle_findings(gt, planted_texts, placement))
+        hits = moved["aggregates"]["strict"]["all"]["tp"]
+        if hits:
+            problems.append(f"oracle moved {where} still has {hits} strict hit(s)")
     return problems
+
+
+def check_accepted_kinds(recipe: Recipe, gt: GroundTruth) -> list[str]:
+    """Part of check 1: ``accepted_kinds`` = default kinds + the recipe's extra kinds."""
+    problems = []
+    recipe_bugs = {b.bug_id: b for b in recipe.bugs}
+    for b in gt.bugs:
+        rb = recipe_bugs.get(b.bug_id)
+        if rb is None:
+            continue  # reported by the bug list comparison
+        want = list(dict.fromkeys([*default_accepted_kinds(rb.kind), *rb.extra_accepted_kinds]))
+        if "other" in want or b.accepted_kinds != want:
+            problems.append(f"{b.bug_id}: accepted_kinds {b.accepted_kinds} != expected {want}")
+        if accepted_kinds_for(rb) != want:
+            problems.append(f"{b.bug_id}: build_dataset.accepted_kinds_for disagrees with {want}")
+    return problems
+
+
+def documented_extra_kinds(record_text: str) -> dict[tuple[str, str], set[str]]:
+    """Rows of the per-bug table in decision 0005: ``| item_id | bug_id | kinds | reason |``,
+    where ``kinds`` is a comma-separated list (backticks allowed)."""
+    out: dict[tuple[str, str], set[str]] = {}
+    for line in record_text.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [c.strip().strip("`").strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or not re.fullmatch(r"item_\d{3}", cells[0]):
+            continue
+        kinds = {k.strip().strip("`").strip() for k in cells[2].split(",")}
+        out.setdefault((cells[0], cells[1]), set()).update(k for k in kinds if k)
+    return out
+
+
+def check_extra_kinds_documented(recipe: Recipe, record_text: str | None) -> list[str]:
+    """Check 12: each bug with extra accepted kinds has a row in decision 0005 that names every
+    one of its extra kinds."""
+    bugs = [b for b in recipe.bugs if b.extra_accepted_kinds]
+    if not bugs:
+        return []
+    if record_text is None:
+        return [f"{EXTRA_KINDS_RECORD} is missing"]
+    rows = documented_extra_kinds(record_text)
+    problems = []
+    for b in bugs:
+        documented = rows.get((recipe.item_id, b.bug_id))
+        if documented is None:
+            problems.append(f"{b.bug_id}: extra kinds not listed in {EXTRA_KINDS_RECORD}")
+            continue
+        missing = [k for k in b.extra_accepted_kinds if k not in documented]
+        if missing:
+            problems.append(f"{b.bug_id}: extra kinds {missing} not listed in {EXTRA_KINDS_RECORD}")
+    return problems
+
+
+def read_extra_kinds_record() -> str | None:
+    path = repo_root() / EXTRA_KINDS_RECORD
+    return path.read_bytes().decode("utf-8") if path.is_file() else None
 
 
 # --- The item check ---------------------------------------------------------------------------
@@ -400,6 +497,11 @@ class ItemChecker:
         self.add(9, "tests", self.c9_tests)
         self.add(10, "giveaways", lambda: check_giveaways(self.recipe, self.plant))
         self.add(11, "secrets", lambda: check_secrets(self.recipe))
+        self.add(
+            12,
+            "extra_kinds",
+            lambda: check_extra_kinds_documented(self.recipe, read_extra_kinds_record()),
+        )
         return self.results
 
     def planted_texts(self) -> dict[str, str]:
@@ -424,9 +526,7 @@ class ItemChecker:
         got = [(b.bug_id, b.kind, b.file, b.description) for b in gt.bugs]
         if want != got:
             p.append(f"bugs differ: recipe {want} vs ground truth {got}")
-        for b in gt.bugs:
-            if b.accepted_kinds != default_accepted_kinds(b.kind):
-                p.append(f"{b.bug_id}: accepted_kinds {b.accepted_kinds} != default")
+        p.extend(check_accepted_kinds(r, gt))
         return p
 
     def c2_eligibility(self) -> list[str]:
