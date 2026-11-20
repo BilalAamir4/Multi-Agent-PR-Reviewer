@@ -1,6 +1,7 @@
 # Limits from the free tiers, read from the consoles on Nov 17, 2026 (docs/model-routing.md).
 # IDs are exact, from docs/model-inventory.md (listed Nov 19, 2026), without the "models/" prefix.
-# tool_calling is set from scripts/check_tool_calls.py (stage 0B); unknown means not tested.
+# tool_calling is set from scripts/check_tool_calls.py (stage 0B, re-run Nov 20, 2026);
+# unknown means not tested.
 models:
   # Group A. Gemini Flash: 5 RPM, 250K TPM, 20 RPD
   gemini-3.8-flash:
@@ -47,7 +48,7 @@ models:
     tpm: 250000
     rpd: 500
     tpd: null
-    tool_calling: unknown
+    tool_calling: true
   # Group C. Groq: 30 RPM, 8K TPM, 1K RPD, 200K TPD
   openai/gpt-oss-120b:
     provider: groq
@@ -92,7 +93,7 @@ models:
     tpm: null
     rpd: 20
     tpd: null
-    tool_calling: unknown
+    tool_calling: true
   # Not in any chain: injection classifier for stage 7. The routing doc gives 14.4K RPD;
   # the other Groq limits are not stated for it, so they are left null.
   meta-llama/llama-prompt-guard-2-86m:

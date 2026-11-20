@@ -21,7 +21,7 @@ the same day. The interrupted run left a LangSmith root run stuck in `pending` w
 | `httpx`, `pydantic`, `python-dotenv` | 0.28.1, 2.14.3, 1.2.4 |
 | `pytest`, `ruff` | 9.2.0, 0.17.5 |
 
-ripgrep: **not installed** (needed from stage 1): `winget install BurntSushi.ripgrep.MSVC`.
+ripgrep: 14.1.1 (installed after 0B; confirmed Nov 20, 2026).
 
 ## Model IDs
 
@@ -68,6 +68,19 @@ Full listing: `docs/model-inventory.md`. Chains and limits: `config/models.yaml`
 
 `tool_calling` in `config/models.yaml` is `true` for the two models that passed; the three that
 got 503s stay `unknown`, because overload says nothing about tool calling.
+
+### Follow-up re-run (Nov 20, 2026, after the 1:00 PM PKT quota reset)
+
+`uv run python scripts/check_tool_calls.py gemma-4-26b-a4b-it gemini-4-hydrogen
+gemini-3.1-flash-lite` (at most 2 model calls per run, no extra retries), then the `Finding`
+integration test once.
+
+| Check | Result | Note |
+| --- | --- | --- |
+| Tool calling, `gemma-4-26b-a4b-it` | not tested | 503 UNAVAILABLE again; `tool_calling` stays `unknown` |
+| Tool calling, `gemini-4-hydrogen` | **pass** | called `get_line(n=7)`, answer is the exact line; `tool_calling: true` |
+| Tool calling, `gemini-3.1-flash-lite` | **pass** | called `get_line(n=7)`, answer is the exact line; `tool_calling: true` |
+| `Finding` integration test (`tests/test_integration_finding.py`) | **pass** | 1 call to `gemini-3.1-flash-lite`, traced, no key in the trace |
 
 LangSmith trace of the `Finding` call:
 https://smith.langchain.com/o/dc790a75-743f-467d-a940-18bb085de125/projects/p/494eeee1-bc47-4880-971b-55ac8176fdee/r/01a1f495-c4c3-71ad-a9dc-64703bceb6aa?poll=true
