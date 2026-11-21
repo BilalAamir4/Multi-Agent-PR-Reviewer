@@ -1,0 +1,30 @@
+{
+  "item_id": "item_006",
+  "source_repo": "sqlalchemy/alembic",
+  "base_commit": "1bc21b86dd6ddd07ac696e2d73b6cb200dd97bbd",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "alembic/autogenerate/compare/comments.py",
+      "line_start": 83,
+      "line_end": 83,
+      "kind": "wrong_comparison",
+      "accepted_kinds": [
+        "wrong_comparison"
+      ],
+      "description": "_compare_table_comment tests conn_comment is None instead of is not None in the drop-comment branch, so that branch can never run and a table comment that was removed from the metadata is reported as a CreateTableCommentOp with a None comment instead of a DropTableCommentOp."
+    },
+    {
+      "bug_id": "b2",
+      "file": "tests/test_autogen_render.py",
+      "line_start": 2364,
+      "line_end": 2365,
+      "kind": "ineffective_test",
+      "accepted_kinds": [
+        "ineffective_test"
+      ],
+      "description": "test_render_add_column_with_empty_comment only asserts that the rendered text is not empty, so it no longer checks that an empty string comment is emitted as comment='' in the add_column call."
+    }
+  ]
+}

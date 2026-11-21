@@ -1,0 +1,19 @@
+# sqlite-utils: "transform: coerce empty strings to NULL when converting TEXT columns to numeric types (#805)"
+# One plant: the column name is formatted into the copy SQL without quote_identifier.
+item_id: item_011
+repo: sqlite-utils
+commit: e4935e064407bc995f77795c025c33cef52d742e
+expected_bucket: small
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: sql_injection
+  file: sqlite_utils/db.py
+  find: |2
+                    return "NULLIF({}, '')".format(quote_identifier(col))
+  replace: |2
+                    return "NULLIF({}, '')".format(col)
+  description: >-
+    _copy_expr formats the column name into the INSERT ... SELECT copy statement of transform() without
+    quote_identifier, so a column name with spaces, quotes or SQL syntax is interpreted as SQL instead
+    of as one identifier when its type is changed from TEXT to a numeric type.

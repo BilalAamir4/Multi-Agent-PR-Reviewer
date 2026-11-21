@@ -1,0 +1,31 @@
+# alembic: "Use ForeignKey target accessors instead of splitting colspecs"
+# Two plants: an index change in batch mode's referent setup, and an inverted check in the new
+# _fk_target_is_named helper whose only caller is in schemaobj.py (cross-file).
+item_id: item_008
+repo: alembic
+commit: 2e1f1599965ccc841b97f097acc5c59c42f6e65c
+expected_bucket: large
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: off_by_one
+  file: alembic/operations/batch.py
+  find: |2
+            referent_schema, tname, _ = _fk_target_tokens(constraint.elements[0])
+  replace: |2
+            referent_schema, tname, _ = _fk_target_tokens(constraint.elements[1])
+  description: >-
+    ApplyBatchImpl._setup_referent reads the referent from constraint.elements[1] instead of the first
+    element, so a single-column foreign key raises IndexError and a composite one takes its table and
+    schema from the second column.
+- bug_id: b2
+  kind: wrong_comparison
+  file: alembic/util/sqla_compat.py
+  find: |2
+            return fk_any.target_column is None
+  replace: |2
+            return fk_any.target_column is not None
+  description: >-
+    _fk_target_is_named returns True when the foreign key already has a target Column object instead of
+    when it identifies the target by name, so SchemaObjects._ensure_table_for_fk in schemaobj.py skips
+    name-based foreign keys and builds placeholder tables for the wrong ones.

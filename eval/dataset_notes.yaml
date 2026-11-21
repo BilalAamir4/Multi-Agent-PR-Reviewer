@@ -1,0 +1,7 @@
+# Facts about planted bugs that the recipes in eval/plants/ do not store (decision 0014).
+# cross_file: "<item>/<bug>": the other changed file through which the defect shows. The bug's
+# ground-truth lines are where the defect is; this file only records the cross-file property for
+# eval/dataset_stats.py. It is not read by the scorer or by any agent.
+cross_file:
+  item_007/b2: alembic/autogenerate/compare/util.py
+  item_008/b2: alembic/operations/schemaobj.py

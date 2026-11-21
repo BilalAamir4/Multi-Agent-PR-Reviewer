@@ -1,0 +1,30 @@
+{
+  "item_id": "item_010",
+  "source_repo": "simonw/sqlite-utils",
+  "base_commit": "3db0c57a3bc9d8468db430ebe0ffd0da213fdda3",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "sqlite_utils/db.py",
+      "line_start": 97,
+      "line_end": 97,
+      "kind": "sql_injection",
+      "accepted_kinds": [
+        "sql_injection"
+      ],
+      "description": "_check_constraint_sql formats the constraint name into the CREATE TABLE statement without quote_identifier, so a CHECK constraint name containing spaces, quotes or SQL syntax is interpreted as SQL instead of as one identifier when the table is recreated."
+    },
+    {
+      "bug_id": "b2",
+      "file": "sqlite_utils/create_table_parser.py",
+      "line_start": 556,
+      "line_end": 556,
+      "kind": "off_by_one",
+      "accepted_kinds": [
+        "off_by_one"
+      ],
+      "description": "_is_identifier_token bounds the look-ahead with <= instead of <, so for the last token of a CHECK expression tokens[index + 1] raises IndexError when a column is renamed or dropped."
+    }
+  ]
+}

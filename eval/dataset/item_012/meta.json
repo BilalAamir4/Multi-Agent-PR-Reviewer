@@ -1,0 +1,38 @@
+{
+  "item_id": "item_012",
+  "repo": "click",
+  "upstream_commit": "c53d3732b98c764932e146c007146ad402acb229",
+  "parent": "bb695aaecdef95832d167fc1d508921745aa824e",
+  "pr_title": "Fix `show_envvar` output for a sequence or an empty `envvar`",
+  "pr_body": "",
+  "bucket": "small",
+  "py_files_changed": 2,
+  "lines_changed": 64,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "1880b896331d380db519ef81ed384fbd028788d8e441ebbe66a75caba14a96da",
+  "tests_original": {
+    "passed": 2108,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 24,
+    "duration": 3.46,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "2108 passed, 24 skipped, 31003 deselected, 1 xfailed in 3.46s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 2108,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 24,
+    "duration": 3.48,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "2108 passed, 24 skipped, 31003 deselected, 1 xfailed in 3.48s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

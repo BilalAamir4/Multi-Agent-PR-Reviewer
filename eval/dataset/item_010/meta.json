@@ -1,0 +1,80 @@
+{
+  "item_id": "item_010",
+  "repo": "sqlite-utils",
+  "upstream_commit": "2303b80aef69abe418636dc980c5350958d55411",
+  "parent": "3db0c57a3bc9d8468db430ebe0ffd0da213fdda3",
+  "pr_title": ".transform() preserves check constraints, refs #762",
+  "pr_body": "",
+  "bucket": "medium",
+  "py_files_changed": 4,
+  "lines_changed": 449,
+  "sweep": false,
+  "plant_patch": "diff --git a/sqlite_utils/create_table_parser.py b/sqlite_utils/create_table_parser.py\nindex 082c2c8..174abf0 100644\n--- a/sqlite_utils/create_table_parser.py\n+++ b/sqlite_utils/create_table_parser.py\n@@ -553,7 +553,7 @@ def parse_checks(create_sql: str) -> list[Check]:\n \n def _is_identifier_token(tokens: list[_Token], index: int) -> bool:\n     token = tokens[index]\n-    if index + 1 < len(tokens) and tokens[index + 1].text in (\"(\", \".\"):\n+    if index + 1 <= len(tokens) and tokens[index + 1].text in (\"(\", \".\"):\n         return False\n     if index and (\n         tokens[index - 1].is_keyword(\"COLLATE\") or tokens[index - 1].is_keyword(\"AS\")\ndiff --git a/sqlite_utils/db.py b/sqlite_utils/db.py\nindex 949f574..dd826a7 100644\n--- a/sqlite_utils/db.py\n+++ b/sqlite_utils/db.py\n@@ -94,7 +94,7 @@ def quote_identifier(identifier: str) -> str:\n \n \n def _check_constraint_sql(check: Check) -> str:\n-    prefix = f\"CONSTRAINT {quote_identifier(check.name)} \" if check.name else \"\"\n+    prefix = f\"CONSTRAINT {check.name} \" if check.name else \"\"\n     newline = \"\\n\" if check_expression_ends_in_line_comment(check.check) else \"\"\n     return f\"{prefix}CHECK ({check.check}{newline})\"\n \n",
+  "tests_key": "017744ab419370cad9038c7b8d7b2472e37f2ad21e27c465d4e44b18225dc953",
+  "tests_original": {
+    "passed": 1434,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.87,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1434 passed, 16 skipped, 32 warnings in 7.87s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1366,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.78,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 1366 passed, 16 skipped, 32 warnings in 7.78s",
+    "failing": [
+      "FAILED tests/test_transform.py::test_transform_renames_columns_inside_check_constraints"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 1434,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 16,
+        "duration": 7.72,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1434 passed, 16 skipped, 32 warnings in 7.72s",
+        "failing": []
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 1366,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 16,
+        "duration": 7.76,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 1366 passed, 16 skipped, 32 warnings in 7.76s",
+        "failing": [
+          "FAILED tests/test_transform.py::test_transform_renames_columns_inside_check_constraints"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

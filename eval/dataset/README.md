@@ -11,8 +11,21 @@ from the parent to the commit plus the bugs. A clean item is the upstream commit
 | item_003 | sqlite-utils | [`7a52214624ae`](https://github.com/simonw/sqlite-utils/commit/7a52214624ae0e2c3fdf07215c1bcfc1393dbd93) | medium | 4 | 138 | planted | `sql_injection`, `ineffective_test` |
 | item_004 | click | [`4ece17a107d7`](https://github.com/pallets/click/commit/4ece17a107d7b2e8bc3bd14356c2b53038fe41cf) | large | 8 | 310 | planted | `missing_none_check`, `unhandled_exception`, `ineffective_test` |
 | item_005 | sqlite-utils | [`07b603e562af`](https://github.com/simonw/sqlite-utils/commit/07b603e562af19f80c3d00eb59b9cf29331127ce) | large | 8 | 132 | clean | none |
+| item_006 | alembic | [`326e8fb37aa6`](https://github.com/sqlalchemy/alembic/commit/326e8fb37aa6bd85cfccad11919c3646e7677abe) | large | 9 | 231 | planted | `wrong_comparison`, `ineffective_test` |
+| item_007 | alembic | [`7ed6e478e849`](https://github.com/sqlalchemy/alembic/commit/7ed6e478e84956958fe1c6ee5c76f694bfb3b808) | large | 12 | 1214 | planted | `missing_none_check` (2), `unhandled_exception` |
+| item_008 | alembic | [`2e1f1599965c`](https://github.com/sqlalchemy/alembic/commit/2e1f1599965ccc841b97f097acc5c59c42f6e65c) | large | 8 | 226 | planted | `off_by_one`, `wrong_comparison` |
+| item_009 | marshmallow | [`68c68e3a5625`](https://github.com/marshmallow-code/marshmallow/commit/68c68e3a562591a5b705907d948faac843e216c7) | large | 9 | 707 | clean | none |
+| item_010 | sqlite-utils | [`2303b80aef69`](https://github.com/simonw/sqlite-utils/commit/2303b80aef69abe418636dc980c5350958d55411) | medium | 4 | 449 | planted | `sql_injection`, `off_by_one` |
+| item_011 | sqlite-utils | [`e4935e064407`](https://github.com/simonw/sqlite-utils/commit/e4935e064407bc995f77795c025c33cef52d742e) | small | 2 | 62 | planted | `sql_injection` |
+| item_012 | click | [`c53d3732b98c`](https://github.com/pallets/click/commit/c53d3732b98c764932e146c007146ad402acb229) | small | 2 | 64 | clean | none |
+| item_013 | sqlite-utils | [`fd5b09f64b43`](https://github.com/simonw/sqlite-utils/commit/fd5b09f64b4353b0c85084eb04415e344d05832f) | large | 11 | 301 | planted | `hardcoded_secret` (2) |
 
 item_003 has exactly 4 changed `.py` files because stage 4's timing test uses it.
+
+item_006 to item_013 are session E1 of the dataset expansion (decision 0014); item_014 to item_020
+(session E2) complete the 20 items of D5. `uv run python -m eval.dataset_stats` prints the
+bucket, kind, repository, multi-line, cross-file and D12 spawning counts and compares them with the
+targets; `eval/dataset_notes.yaml` lists the cross-file bugs.
 
 ## Files
 
@@ -59,5 +72,6 @@ returns the PR's files for sandbox runs.
 
 The stage 1B baseline run is the first time a score is recorded. From that run onwards the recipes
 in `eval/plants/` and the files in `eval/dataset/` (above all `ground_truth.json` and `pr.diff`)
-are **frozen**, like `eval/score.py`. A change after that needs a decision record in
+are **frozen**, like `eval/score.py`. item_006 to item_020 were added before stage 5's first run;
+from stage 5's first run onwards, all 20 items are frozen. A change after that needs a decision record in
 `docs/decisions/`, and every configuration must be re-scored.

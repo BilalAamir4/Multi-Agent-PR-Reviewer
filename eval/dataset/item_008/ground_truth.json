@@ -1,0 +1,30 @@
+{
+  "item_id": "item_008",
+  "source_repo": "sqlalchemy/alembic",
+  "base_commit": "c116cbc0f39d9df2b4ce5f1871043a622ca8774f",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "alembic/operations/batch.py",
+      "line_start": 405,
+      "line_end": 405,
+      "kind": "off_by_one",
+      "accepted_kinds": [
+        "off_by_one"
+      ],
+      "description": "ApplyBatchImpl._setup_referent reads the referent from constraint.elements[1] instead of the first element, so a single-column foreign key raises IndexError and a composite one takes its table and schema from the second column."
+    },
+    {
+      "bug_id": "b2",
+      "file": "alembic/util/sqla_compat.py",
+      "line_start": 389,
+      "line_end": 389,
+      "kind": "wrong_comparison",
+      "accepted_kinds": [
+        "wrong_comparison"
+      ],
+      "description": "_fk_target_is_named returns True when the foreign key already has a target Column object instead of when it identifies the target by name, so SchemaObjects._ensure_table_for_fk in schemaobj.py skips name-based foreign keys and builds placeholder tables for the wrong ones."
+    }
+  ]
+}

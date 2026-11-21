@@ -1,0 +1,1484 @@
+diff --git a/alembic/__init__.py b/alembic/__init__.py
+index f41cb208..0dc63607 100644
+--- a/alembic/__init__.py
++++ b/alembic/__init__.py
+@@ -2,4 +2,4 @@ from . import context
+ from . import op
+ from .runtime import plugins
+ 
+-__version__ = "1.18.6"
++__version__ = "1.19.0"
+diff --git a/alembic/autogenerate/compare/__init__.py b/alembic/autogenerate/compare/__init__.py
+index a49640cf..28fbf6f3 100644
+--- a/alembic/autogenerate/compare/__init__.py
++++ b/alembic/autogenerate/compare/__init__.py
+@@ -3,6 +3,7 @@ from __future__ import annotations
+ import logging
+ from typing import TYPE_CHECKING
+ 
++from . import check_constraints
+ from . import comments
+ from . import constraints
+ from . import schema
+@@ -60,3 +61,6 @@ Plugin.setup_plugin_from_module(
+     server_defaults, "alembic.autogenerate.defaults"
+ )
+ Plugin.setup_plugin_from_module(comments, "alembic.autogenerate.comments")
++Plugin.setup_plugin_from_module(
++    check_constraints, "alembic.autogenerate.checkconstraint_byname"
++)
+diff --git a/alembic/autogenerate/compare/check_constraints.py b/alembic/autogenerate/compare/check_constraints.py
+new file mode 100644
+index 00000000..c9e8b9ed
+--- /dev/null
++++ b/alembic/autogenerate/compare/check_constraints.py
+@@ -0,0 +1,195 @@
++# mypy: allow-untyped-defs, allow-untyped-calls, allow-incomplete-defs
++
++from __future__ import annotations
++
++import logging
++from typing import Optional
++from typing import TYPE_CHECKING
++from typing import Union
++
++from sqlalchemy import schema as sa_schema
++
++from .util import _InspectorConv
++from ...operations import ops
++from ...util import PriorityDispatchResult
++from ...util import sqla_compat
++
++if TYPE_CHECKING:
++    from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
++    from sqlalchemy.sql.elements import quoted_name
++    from sqlalchemy.sql.schema import CheckConstraint
++    from sqlalchemy.sql.schema import Table
++
++    from ...autogenerate.api import AutogenContext
++    from ...ddl.impl import DefaultImpl
++    from ...operations.ops import ModifyTableOps
++    from ...runtime.plugins import Plugin
++
++
++log = logging.getLogger(__name__)
++
++
++def _make_check_constraint(
++    impl: DefaultImpl,
++    params: ReflectedCheckConstraint,
++    conn_table: Table,
++) -> CheckConstraint:
++    const = sa_schema.CheckConstraint(
++        params["sqltext"],
++        name=params["name"],
++        table=conn_table,
++        **impl.adjust_reflected_dialect_options(params, "check_constraint"),
++    )
++    return const
++
++
++def _compare_check_constraints(
++    autogen_context: AutogenContext,
++    modify_table_ops: ModifyTableOps,
++    schema: Optional[str],
++    tname: Union[quoted_name, str],
++    conn_table: Optional[Table],
++    metadata_table: Optional[Table],
++) -> PriorityDispatchResult:
++    if metadata_table is None:
++        return PriorityDispatchResult.CONTINUE
++
++    inspector = autogen_context.inspector
++    impl = autogen_context.migration_context.impl
++
++    metadata_ck_constraints = {
++        ck
++        for ck in metadata_table.constraints
++        if isinstance(ck, sa_schema.CheckConstraint)
++        and not sqla_compat._is_type_bound(ck)
++    }
++
++    try:
++        conn_ck_list = _InspectorConv(inspector).get_check_constraints(
++            tname, schema=schema
++        )
++    except KeyError:
++        return PriorityDispatchResult.CONTINUE
++
++    conn_ck_list = [
++        ck
++        for ck in conn_ck_list
++        if ck.get("name") is not None
++        and autogen_context.run_name_filters(
++            ck["name"],
++            "check_constraint",
++            {"table_name": tname, "schema_name": schema},
++        )
++    ]
++
++    conn_ck_objs = {
++        _make_check_constraint(impl, ck_def, conn_table)
++        for ck_def in conn_ck_list
++    }
++
++    metadata_ck_sig = {
++        impl._create_metadata_constraint_sig(ck)
++        for ck in metadata_ck_constraints
++        if sqla_compat._constraint_is_named(ck, autogen_context.dialect)
++    }
++
++    conn_ck_sig = {
++        impl._create_reflected_constraint_sig(ck) for ck in conn_ck_objs
++    }
++
++    metadata_ck_by_name = {
++        c.name: c
++        for c in metadata_ck_sig
++        if sqla_compat.constraint_name_string(c.name)
++    }
++    conn_ck_by_name = {
++        c.name: c
++        for c in conn_ck_sig
++        if sqla_compat.constraint_name_string(c.name)
++    }
++
++    for removed_name in sorted(
++        set(conn_ck_by_name).difference(metadata_ck_by_name)
++    ):
++        conn_obj = conn_ck_by_name[removed_name]
++        if autogen_context.run_object_filters(
++            conn_obj.const,
++            conn_obj.name,
++            "check_constraint",
++            True,
++            None,
++        ):
++            modify_table_ops.ops.append(
++                ops.DropConstraintOp.from_constraint(conn_obj.const)
++            )
++            log.info(
++                "Detected removed check constraint %r on table %r",
++                conn_obj.name,
++                tname,
++            )
++
++    for existing_name in sorted(
++        set(metadata_ck_by_name).intersection(conn_ck_by_name)
++    ):
++        metadata_obj = metadata_ck_by_name[existing_name]
++        conn_obj = conn_ck_by_name[existing_name]
++
++        comparison = metadata_obj.compare_to_reflected(conn_obj)
++
++        if comparison.is_different:
++            if autogen_context.run_object_filters(
++                metadata_obj.const,
++                metadata_obj.name,
++                "check_constraint",
++                False,
++                conn_obj.const,
++            ):
++                log.info(
++                    "Detected changed check constraint %r on table %r: %s",
++                    existing_name,
++                    tname,
++                    comparison.message,
++                )
++                modify_table_ops.ops.append(
++                    ops.DropConstraintOp.from_constraint(conn_obj.const)
++                )
++                modify_table_ops.ops.append(
++                    ops.AddConstraintOp.from_constraint(metadata_obj.const)
++                )
++        elif comparison.is_skip:
++            log.info(
++                "Cannot compare check constraint %r, "
++                "assuming equal and skipping. %s",
++                existing_name,
++                comparison.message,
++            )
++
++    for added_name in sorted(
++        set(metadata_ck_by_name).difference(conn_ck_by_name)
++    ):
++        metadata_obj = metadata_ck_by_name[added_name]
++        if autogen_context.run_object_filters(
++            metadata_obj.const,
++            metadata_obj.name,
++            "check_constraint",
++            False,
++            None,
++        ):
++            modify_table_ops.ops.append(
++                ops.AddConstraintOp.from_constraint(metadata_obj.const)
++            )
++            log.info(
++                "Detected added check constraint %r on table %r",
++                metadata_obj.name,
++                tname,
++            )
++
++    return PriorityDispatchResult.CONTINUE
++
++
++def setup(plugin: Plugin) -> None:
++    plugin.add_autogenerate_comparator(
++        _compare_check_constraints,
++        "table",
++        "checkconstraints",
++    )
+diff --git a/alembic/autogenerate/compare/util.py b/alembic/autogenerate/compare/util.py
+index 41829c0e..dfec3685 100644
+--- a/alembic/autogenerate/compare/util.py
++++ b/alembic/autogenerate/compare/util.py
+@@ -15,6 +15,7 @@ from ...util import sqla_compat
+ if TYPE_CHECKING:
+     from sqlalchemy import Table
+     from sqlalchemy.engine import Inspector
++    from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
+     from sqlalchemy.engine.interfaces import ReflectedForeignKeyConstraint
+     from sqlalchemy.engine.interfaces import ReflectedIndex
+     from sqlalchemy.engine.interfaces import ReflectedUniqueConstraint
+@@ -78,6 +79,11 @@ class _InspectorConv:
+     ) -> list[ReflectedForeignKeyConstraint]:
+         raise NotImplementedError()
+ 
++    def get_check_constraints(
++        self, tname: str, schema: str | None
++    ) -> list[ReflectedCheckConstraint]:
++        raise NotImplementedError()
++
+     def reflect_table(self, table: Table) -> None:
+         raise NotImplementedError()
+ 
+@@ -123,6 +129,13 @@ class _LegacyInspectorConv(_InspectorConv):
+             self.inspector.get_foreign_keys(tname, schema=schema)
+         )
+ 
++    def get_check_constraints(
++        self, tname: str, schema: str | None
++    ) -> list[ReflectedCheckConstraint]:
++        return self._apply_reflectinfo_conv(
++            self.inspector.get_check_constraints(tname, schema=schema)
++        )
++
+     def reflect_table(self, table: Table) -> None:
+         self.inspector.reflect_table(table, include_columns=None)
+ 
+@@ -252,6 +265,18 @@ class _SQLA2InspectorConv(_InspectorConv):
+             apply_constraint_conv=True,
+         )
+ 
++    def get_check_constraints(
++        self, tname: str, schema: str | None
++    ) -> list[ReflectedCheckConstraint]:
++        return self._return_from_cache(
++            tname,
++            schema,
++            "alembic_check_constraints",
++            self.inspector.get_check_constraints,
++            apply_constraint_conv=True,
++            optional=False,
++        )
++
+     def _apply_reflectinfo_conv(self, consts):
+         if not consts:
+             return consts
+diff --git a/alembic/autogenerate/render.py b/alembic/autogenerate/render.py
+index f202c6c8..eb2f4740 100644
+--- a/alembic/autogenerate/render.py
++++ b/alembic/autogenerate/render.py
+@@ -438,8 +438,24 @@ def _add_pk_constraint(constraint, autogen_context):
+ 
+ 
+ @renderers.dispatch_for(ops.CreateCheckConstraintOp)
+-def _add_check_constraint(constraint, autogen_context):
+-    raise NotImplementedError()
++def _add_check_constraint(
++    autogen_context: AutogenContext, op: ops.CreateCheckConstraintOp
++) -> str:
++    constraint = op.to_constraint()
++    args = [repr(_render_gen_name(autogen_context, op.constraint_name))]
++    if not autogen_context._has_batch:
++        args.append(repr(_ident(op.table_name)))
++    args.append(
++        _render_potential_expr(
++            constraint.sqltext, autogen_context, wrap_in_element=False
++        )
++    )
++    if not autogen_context._has_batch:
++        args.append("schema=%r" % _ident(op.schema))
++    return "%(prefix)screate_check_constraint(%(args)s)" % {
++        "prefix": _alembic_autogenerate_prefix(autogen_context),
++        "args": ", ".join(args),
++    }
+ 
+ 
+ @renderers.dispatch_for(ops.DropConstraintOp)
+diff --git a/alembic/context.pyi b/alembic/context.pyi
+index 6045d8b3..32e0598e 100644
+--- a/alembic/context.pyi
++++ b/alembic/context.pyi
+@@ -113,6 +113,7 @@ def configure(
+                     "index",
+                     "unique_constraint",
+                     "foreign_key_constraint",
++                    "check_constraint",
+                 ],
+                 MutableMapping[
+                     Literal[
+@@ -138,6 +139,7 @@ def configure(
+                     "index",
+                     "unique_constraint",
+                     "foreign_key_constraint",
++                    "check_constraint",
+                 ],
+                 bool,
+                 Optional[SchemaItem],
+diff --git a/alembic/ddl/_autogen.py b/alembic/ddl/_autogen.py
+index 74715b18..7607bc54 100644
+--- a/alembic/ddl/_autogen.py
++++ b/alembic/ddl/_autogen.py
+@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
+ from typing import TypeVar
+ from typing import Union
+ 
++from sqlalchemy.sql.schema import CheckConstraint
+ from sqlalchemy.sql.schema import Constraint
+ from sqlalchemy.sql.schema import ForeignKeyConstraint
+ from sqlalchemy.sql.schema import Index
+@@ -86,6 +87,7 @@ class _constraint_sig(Generic[_C]):
+     _is_index: ClassVar[bool] = False
+     _is_fk: ClassVar[bool] = False
+     _is_uq: ClassVar[bool] = False
++    _is_ck: ClassVar[bool] = False
+ 
+     _is_metadata: bool
+ 
+@@ -317,6 +319,35 @@ class _fk_constraint_sig(_constraint_sig[ForeignKeyConstraint]):
+         )
+ 
+ 
++class _ck_constraint_sig(_constraint_sig[CheckConstraint]):
++    _is_ck = True
++
++    @classmethod
++    def _register(cls) -> None:
++        _clsreg["check_constraint"] = cls
++        _clsreg["table_or_column_check_constraint"] = cls
++        _clsreg["column_check_constraint"] = cls
++
++    def __init__(
++        self,
++        is_metadata: bool,
++        impl: DefaultImpl,
++        const: CheckConstraint,
++    ) -> None:
++        self._is_metadata = is_metadata
++        self.impl = impl
++        self.const = const
++        self.name = sqla_compat.constraint_name_or_none(const.name)
++        self._sig = (self.name,)
++
++    def _compare_to_reflected(
++        self, other: _constraint_sig[_C]
++    ) -> ComparisonResult:
++        assert self._is_metadata
++        assert is_ck_sig(other)
++        return self.impl.compare_check_constraint(self.const, other.const)
++
++
+ def is_index_sig(sig: _constraint_sig) -> TypeGuard[_ix_constraint_sig]:
+     return sig._is_index
+ 
+@@ -325,5 +356,9 @@ def is_uq_sig(sig: _constraint_sig) -> TypeGuard[_uq_constraint_sig]:
+     return sig._is_uq
+ 
+ 
++def is_ck_sig(sig: _constraint_sig) -> TypeGuard[_ck_constraint_sig]:
++    return sig._is_ck
++
++
+ def is_fk_sig(sig: _constraint_sig) -> TypeGuard[_fk_constraint_sig]:
+     return sig._is_fk
+diff --git a/alembic/ddl/impl.py b/alembic/ddl/impl.py
+index dc4fbaa6..9f98ed80 100644
+--- a/alembic/ddl/impl.py
++++ b/alembic/ddl/impl.py
+@@ -43,6 +43,7 @@ if TYPE_CHECKING:
+     from sqlalchemy.engine import Connection
+     from sqlalchemy.engine import Dialect
+     from sqlalchemy.engine.cursor import CursorResult
++    from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
+     from sqlalchemy.engine.interfaces import ReflectedForeignKeyConstraint
+     from sqlalchemy.engine.interfaces import ReflectedIndex
+     from sqlalchemy.engine.interfaces import ReflectedPrimaryKeyConstraint
+@@ -51,6 +52,7 @@ if TYPE_CHECKING:
+     from sqlalchemy.sql import ClauseElement
+     from sqlalchemy.sql import Executable
+     from sqlalchemy.sql.elements import quoted_name
++    from sqlalchemy.sql.schema import CheckConstraint
+     from sqlalchemy.sql.schema import Constraint
+     from sqlalchemy.sql.schema import ForeignKeyConstraint
+     from sqlalchemy.sql.schema import Index
+@@ -64,7 +66,8 @@ if TYPE_CHECKING:
+     from ..operations.batch import BatchOperationsImpl
+ 
+     _ReflectedConstraint = (
+-        ReflectedForeignKeyConstraint
++        ReflectedCheckConstraint
++        | ReflectedForeignKeyConstraint
+         | ReflectedPrimaryKeyConstraint
+         | ReflectedIndex
+         | ReflectedUniqueConstraint
+@@ -840,6 +843,13 @@ class DefaultImpl(metaclass=ImplMeta):
+         else:
+             return ComparisonResult.Equal()
+ 
++    def compare_check_constraint(
++        self,
++        metadata_constraint: CheckConstraint,
++        reflected_constraint: CheckConstraint,
++    ) -> ComparisonResult:
++        return ComparisonResult.Equal()
++
+     def _skip_functional_indexes(self, metadata_indexes, conn_indexes):
+         conn_indexes_by_name = {c.name: c for c in conn_indexes}
+ 
+diff --git a/alembic/runtime/environment.py b/alembic/runtime/environment.py
+index f9e0b1e3..3bb16833 100644
+--- a/alembic/runtime/environment.py
++++ b/alembic/runtime/environment.py
+@@ -58,6 +58,7 @@ NameFilterType = Literal[
+     "index",
+     "unique_constraint",
+     "foreign_key_constraint",
++    "check_constraint",
+ ]
+ NameFilterParentNames = MutableMapping[
+     Literal["schema_name", "table_name", "schema_qualified_table_name"],
+diff --git a/alembic/testing/requirements.py b/alembic/testing/requirements.py
+index 1b217c93..e087900a 100644
+--- a/alembic/testing/requirements.py
++++ b/alembic/testing/requirements.py
+@@ -65,6 +65,10 @@ class SuiteRequirements(Requirements):
+ 
+         return exclusions.open()
+ 
++    @property
++    def check_constraint_reflection(self):
++        return exclusions.open()
++
+     @property
+     def reflects_pk_names(self):
+         return exclusions.closed()
+diff --git a/docs/build/api/plugins.rst b/docs/build/api/plugins.rst
+index d6d10fc9..5a1f9e5c 100644
+--- a/docs/build/api/plugins.rst
++++ b/docs/build/api/plugins.rst
+@@ -138,6 +138,11 @@ invoked are:
+   depends on the ``tables`` plugin in order to iterate through columns.
+ * ``alembic.autogenerate.comments`` - Table and column comment changes.  This
+   plugin depends on the ``tables`` plugin in order to iterate through columns.
++* ``alembic.autogenerate.checkconstraint_byname`` - Named CHECK constraint
++  creation and dropping. This plugin depends on the ``tables`` plugin in
++  order to iterate through columns.  See
++  :ref:`autogenerate_check_constraints` for background, including how to
++  disable this plugin specifically.
+ 
+ While these names can be specified individually, they are subject to change
+ as Alembic evolves. Using the wildcard pattern is recommended.
+diff --git a/docs/build/autogenerate.rst b/docs/build/autogenerate.rst
+index 261252f2..80826af3 100644
+--- a/docs/build/autogenerate.rst
++++ b/docs/build/autogenerate.rst
+@@ -125,6 +125,9 @@ Autogenerate **will detect**:
+ * Change of nullable status on columns.
+ * Basic changes in indexes and explicitly-named unique constraints
+ * Basic changes in foreign key constraints
++* Named CHECK constraint additions and removals.  See
++  :ref:`autogenerate_check_constraints` below for important caveats regarding
++  this feature, as well as how to disable it.
+ 
+ Autogenerate can **optionally detect**:
+ 
+@@ -183,11 +186,48 @@ Autogenerate **can not detect**:
+ Autogenerate can't currently, but **will eventually detect**:
+ 
+ * Some free-standing constraint additions and removals may not be supported,
+-  including PRIMARY KEY, EXCLUDE, CHECK; these are not necessarily implemented
++  including PRIMARY KEY, EXCLUDE; these are not necessarily implemented
+   within the autogenerate detection system and also may not be supported by
+   the supporting SQLAlchemy dialect.
+ * Sequence additions, removals - not yet implemented.
+ 
++.. _autogenerate_check_constraints:
++
++Detecting CHECK Constraints
++^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++
++.. versionadded:: 1.19.0
++
++Autogenerate detects the addition and removal of **named** CHECK
++constraints.  As with other constraint types, unnamed CHECK constraints are
++not detected; see :doc:`naming` for background on assigning names via a
++naming convention.
++
++This detection is **name-based only**: a metadata-side CHECK constraint and a
++reflected CHECK constraint that share the same name are always presumed to
++be equivalent, regardless of any difference in their expression text.
++Reliably comparing CHECK constraint SQL expressions between what's in the
++:class:`~sqlalchemy.schema.MetaData` and what a database dialect reports
++back from reflection is not generally feasible, since dialects are free to
++normalize, reformat, or otherwise transform the original DDL text.
++
++This detection is implemented as a built-in
++:ref:`plugin <alembic.plugins.toplevel>` named
++``alembic.autogenerate.checkconstraint_byname``, which is part of the
++``alembic.autogenerate.*`` wildcard and therefore active by default.  If
++this behavior is not desired, for example if the name-only comparison is
++producing unwanted false negatives on constraint changes, it can be turned
++off by excluding it from the
++:paramref:`.EnvironmentContext.configure.autogenerate_plugins` list::
++
++    context.configure(
++        # ...
++        autogenerate_plugins=[
++            "alembic.autogenerate.*",
++            "~alembic.autogenerate.checkconstraint_byname",
++        ]
++    )
++
+ Notable 3rd-party libraries that extend the built-in Alembic autogenerate functionality
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
+diff --git a/docs/build/unreleased/508.rst b/docs/build/unreleased/508.rst
+new file mode 100644
+index 00000000..772e5617
+--- /dev/null
++++ b/docs/build/unreleased/508.rst
+@@ -0,0 +1,18 @@
++.. change::
++    :tags: feature, autogenerate
++    :tickets: 508
++
++    Autogenerate now detects the addition and removal of named CHECK
++    constraints, as part of the default autogenerate behavior. Detection is
++    name-based only; a constraint whose name is unchanged is presumed
++    equivalent regardless of its expression text, as reliably normalizing
++    SQL expressions across backends for comparison purposes is not generally
++    feasible. This behavior is implemented as a plugin named
++    ``alembic.autogenerate.checkconstraint_byname``, and may be disabled if not
++    desired by excluding it from the
++    :paramref:`.EnvironmentContext.configure.autogenerate_plugins` list.
++    Pull request courtesy Francois van Kempen.
++
++    .. seealso::
++
++        :ref:`autogenerate_check_constraints`
+diff --git a/tests/test_autogen_check_constraints.py b/tests/test_autogen_check_constraints.py
+new file mode 100644
+index 00000000..456953ec
+--- /dev/null
++++ b/tests/test_autogen_check_constraints.py
+@@ -0,0 +1,835 @@
++from sqlalchemy import Boolean
++from sqlalchemy import CheckConstraint
++from sqlalchemy import Column
++from sqlalchemy import Integer
++from sqlalchemy import MetaData
++from sqlalchemy import Table
++
++from alembic import autogenerate
++from alembic.autogenerate import api
++from alembic.ddl._autogen import ComparisonResult
++from alembic.ddl.impl import DefaultImpl
++from alembic.migration import MigrationContext
++from alembic.operations import ops
++from alembic.testing import config
++from alembic.testing import eq_
++from alembic.testing import eq_ignore_whitespace
++from alembic.testing import TestBase
++from alembic.testing import util
++from alembic.testing.env import clear_staging_env
++from alembic.testing.env import staging_env
++from alembic.testing.suite._autogen_fixtures import AutogenFixtureTest
++
++_ck_plugin_disabled_opts = {
++    "autogenerate_plugins": [
++        "alembic.autogenerate.*",
++        "~alembic.autogenerate.checkconstraint_byname",
++    ]
++}
++
++
++class AutogenCheckConstraintTest(AutogenFixtureTest, TestBase):
++    __backend__ = True
++    __requires__ = ("check_constraint_reflection",)
++
++    def test_add_check_constraint(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "add_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++
++    def test_can_be_disabled_via_exclusion(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2, opts=_ck_plugin_disabled_opts)
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_remove_check_constraint(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "remove_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++
++    def test_same_name_different_expression_no_change(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 5", name="ck_t_x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    def test_compare_check_constraint_is_different(self, monkeypatch):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 5", name="ck_t_x_positive"),
++        )
++
++        monkeypatch.setattr(
++            DefaultImpl,
++            "compare_check_constraint",
++            lambda self, metadata_constraint, reflected_constraint: (
++                ComparisonResult.Different("expression changed")
++            ),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 2)
++        eq_(
++            {diffs[0][0], diffs[1][0]},
++            {"add_constraint", "remove_constraint"},
++        )
++
++    def test_compare_check_constraint_is_skip(self, monkeypatch):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 5", name="ck_t_x_positive"),
++        )
++
++        monkeypatch.setattr(
++            DefaultImpl,
++            "compare_check_constraint",
++            lambda self, metadata_constraint, reflected_constraint: (
++                ComparisonResult.Skip("cannot compare")
++            ),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    def test_no_change_check_constraint(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    def test_unnamed_check_constraint_in_metadata_ignored(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    def test_type_bound_boolean_not_detected(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            Column("flag", Boolean(create_constraint=True)),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_multiple_check_constraints(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            Column("y", Integer),
++            CheckConstraint("x > 0", name="ck_x"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            Column("y", Integer),
++            CheckConstraint("x > 0", name="ck_x"),
++            CheckConstraint("y > 0", name="ck_y"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "add_constraint")
++        eq_(diffs[0][1].name, "ck_y")
++
++    def test_remove_one_of_multiple(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            Column("y", Integer),
++            CheckConstraint("x > 0", name="ck_x"),
++            CheckConstraint("y > 0", name="ck_y"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            Column("y", Integer),
++            CheckConstraint("x > 0", name="ck_x"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "remove_constraint")
++        eq_(diffs[0][1].name, "ck_y")
++
++    def test_add_table_with_check_constraint_no_duplicate(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table("t", m1, Column("x", Integer))
++
++        Table("t", m2, Column("x", Integer))
++        Table(
++            "new_table",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_new_x"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        add_table = [d for d in diffs if d[0] == "add_table"]
++        eq_(len(add_table), 1)
++        eq_(add_table[0][1].name, "new_table")
++
++        new_table = add_table[0][1]
++        ck_in_table = [
++            c
++            for c in new_table.constraints
++            if isinstance(c, CheckConstraint) and c.name == "ck_new_x"
++        ]
++        eq_(len(ck_in_table), 1)
++
++        add_ck = [
++            d
++            for d in diffs
++            if d[0] == "add_constraint" and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(add_ck, [])
++
++    def test_drop_table_with_check_constraint_no_duplicate(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table("t", m1, Column("x", Integer))
++        Table(
++            "old_table",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_old_x"),
++        )
++
++        Table("t", m2, Column("x", Integer))
++
++        diffs = self._fixture(m1, m2)
++
++        drop_table = [d for d in diffs if d[0] == "remove_table"]
++        eq_(len(drop_table), 1)
++        eq_(drop_table[0][1].name, "old_table")
++
++        old_table = drop_table[0][1]
++        ck_in_table = [
++            c
++            for c in old_table.constraints
++            if isinstance(c, CheckConstraint) and c.name == "ck_old_x"
++        ]
++        eq_(len(ck_in_table), 1)
++
++        drop_ck = [
++            d
++            for d in diffs
++            if d[0] == "remove_constraint"
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(drop_ck, [])
++
++
++class AutogenCheckConstraintSchemaTest(AutogenFixtureTest, TestBase):
++    __only_on__ = "postgresql"
++    __backend__ = True
++    __requires__ = ("check_constraint_reflection",)
++
++    def test_add_check_constraint_schema(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            schema=config.test_schema,
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++            schema=config.test_schema,
++        )
++
++        diffs = self._fixture(m1, m2, include_schemas=True)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "add_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++        eq_(diffs[0][1].table.schema, config.test_schema)
++
++    def test_remove_check_constraint_schema(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++            schema=config.test_schema,
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            schema=config.test_schema,
++        )
++
++        diffs = self._fixture(m1, m2, include_schemas=True)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "remove_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++        eq_(diffs[0][1].table.schema, config.test_schema)
++
++
++class AutogenCheckConstraintFilterTest(AutogenFixtureTest, TestBase):
++    __backend__ = True
++    __requires__ = ("check_constraint_reflection",)
++
++    def test_include_name_excludes_reflected_check_constraint(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++        )
++
++        def include_name(name, type_, parent_names):
++            if type_ == "check_constraint":
++                return False
++            return True
++
++        diffs = self._fixture(
++            m1,
++            m2,
++            name_filters=include_name,
++        )
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_include_object_excludes_add(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        def include_object(obj, name, type_, reflected, compare_to):
++            if type_ == "check_constraint":
++                return False
++            return True
++
++        diffs = self._fixture(
++            m1,
++            m2,
++            object_filters=include_object,
++        )
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_include_object_excludes_remove(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++        )
++
++        def include_object(obj, name, type_, reflected, compare_to):
++            if type_ == "check_constraint":
++                return False
++            return True
++
++        diffs = self._fixture(
++            m1,
++            m2,
++            object_filters=include_object,
++        )
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_include_object_receives_correct_args_for_add(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        calls = []
++
++        def include_object(obj, name, type_, reflected, compare_to):
++            if type_ == "check_constraint":
++                calls.append((name, type_, reflected, compare_to))
++            return True
++
++        self._fixture(
++            m1,
++            m2,
++            object_filters=include_object,
++        )
++
++        eq_(len(calls), 1)
++        eq_(calls[0][0], "ck_t_x_positive")
++        eq_(calls[0][1], "check_constraint")
++        eq_(calls[0][2], False)
++        eq_(calls[0][3], None)
++
++    def test_include_object_receives_correct_args_for_remove(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++        )
++
++        calls = []
++
++        def include_object(obj, name, type_, reflected, compare_to):
++            if type_ == "check_constraint":
++                calls.append((name, type_, reflected, compare_to))
++            return True
++
++        self._fixture(
++            m1,
++            m2,
++            object_filters=include_object,
++        )
++
++        eq_(len(calls), 1)
++        eq_(calls[0][0], "ck_t_x_positive")
++        eq_(calls[0][1], "check_constraint")
++        eq_(calls[0][2], True)
++        eq_(calls[0][3], None)
++
++
++class AutogenCheckConstraintNoReflectionTest(AutogenFixtureTest, TestBase):
++    __backend__ = True
++
++    def setUp(self):
++        staging_env()
++        self.bind = eng = util.testing_engine()
++
++        def unimpl(*arg, **kw):
++            raise NotImplementedError()
++
++        eng.dialect.get_check_constraints = unimpl
++        eng.dialect.get_multi_check_constraints = unimpl
++
++    def test_no_reflection_graceful_skip_add(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++    def test_no_reflection_graceful_skip_remove(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        check_diffs = [
++            d
++            for d in diffs
++            if d[0] in ("add_constraint", "remove_constraint")
++            and isinstance(d[1], CheckConstraint)
++        ]
++        eq_(check_diffs, [])
++
++
++class AutogenCheckConstraintRenderTest(TestBase):
++
++    def setUp(self):
++        staging_env()
++        self.bind = config.db
++
++        ctx_opts = {
++            "sqlalchemy_module_prefix": "sa.",
++            "alembic_module_prefix": "op.",
++            "target_metadata": MetaData(),
++        }
++        context = MigrationContext.configure(
++            dialect_name=self.bind.dialect.name, opts=ctx_opts
++        )
++        self.autogen_context = api.AutogenContext(context)
++
++    def tearDown(self):
++        clear_staging_env()
++
++    def test_render_add_check_constraint(self):
++        m = MetaData()
++        t = Table("t", m, Column("x", Integer))
++        ck = CheckConstraint(t.c.x > 0, name="ck_x_positive")
++        op_obj = ops.CreateCheckConstraintOp.from_constraint(ck)
++
++        eq_ignore_whitespace(
++            autogenerate.render_op_text(self.autogen_context, op_obj),
++            "op.create_check_constraint('ck_x_positive', 't', 'x > 0')",
++        )
++
++    def test_render_add_check_constraint_string_sqltext(self):
++        m = MetaData()
++        t = Table("t", m, Column("x", Integer))
++        ck = CheckConstraint("x > 0", name="ck_x_positive")
++        t.append_constraint(ck)
++        op_obj = ops.CreateCheckConstraintOp.from_constraint(ck)
++
++        eq_ignore_whitespace(
++            autogenerate.render_op_text(self.autogen_context, op_obj),
++            "op.create_check_constraint('ck_x_positive', 't', 'x > 0')",
++        )
++
++    def test_render_drop_check_constraint(self):
++        m = MetaData()
++        t = Table("t", m, Column("x", Integer))
++        ck = CheckConstraint(t.c.x > 0, name="ck_x_positive")
++        op_obj = ops.DropConstraintOp.from_constraint(ck)
++
++        eq_ignore_whitespace(
++            autogenerate.render_op_text(self.autogen_context, op_obj),
++            "op.drop_constraint('ck_x_positive', 't', type_='check')",
++        )
++
++    def test_render_add_check_constraint_with_schema(self):
++        m = MetaData()
++        t = Table("t", m, Column("x", Integer), schema="test_schema")
++        ck = CheckConstraint(t.c.x > 0, name="ck_x_positive")
++        op_obj = ops.CreateCheckConstraintOp.from_constraint(ck)
++
++        eq_ignore_whitespace(
++            autogenerate.render_op_text(self.autogen_context, op_obj),
++            "op.create_check_constraint('ck_x_positive', 't', 'x > 0', "
++            "schema='test_schema')",
++        )
++
++
++class AutogenCheckConstraintNamingConvTest(AutogenFixtureTest, TestBase):
++    __backend__ = True
++    __requires__ = ("check_constraint_reflection",)
++
++    def test_add_named_via_convention(self):
++        m1 = MetaData()
++        m2 = MetaData(
++            naming_convention={"ck": "ck_%(table_name)s_%(constraint_name)s"}
++        )
++
++        Table("t", m1, Column("x", Integer))
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "add_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++
++    def test_remove_named_via_convention(self):
++        m1 = MetaData()
++        m2 = MetaData(
++            naming_convention={"ck": "ck_%(table_name)s_%(constraint_name)s"}
++        )
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table("t", m2, Column("x", Integer))
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(len(diffs), 1)
++        eq_(diffs[0][0], "remove_constraint")
++        eq_(diffs[0][1].name, "ck_t_x_positive")
++
++    def test_no_change_named_via_convention(self):
++        m1 = MetaData()
++        m2 = MetaData(
++            naming_convention={"ck": "ck_%(table_name)s_%(constraint_name)s"}
++        )
++
++        Table(
++            "t",
++            m1,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="ck_t_x_positive"),
++        )
++
++        Table(
++            "t",
++            m2,
++            Column("x", Integer),
++            CheckConstraint("x > 0", name="x_positive"),
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
+diff --git a/tests/test_autogen_composition.py b/tests/test_autogen_composition.py
+index e8688b84..ccad0bec 100644
+--- a/tests/test_autogen_composition.py
++++ b/tests/test_autogen_composition.py
+@@ -448,6 +448,8 @@ class AutogenerateNamingConvTest(NamingConvModel, AutogenTest, TestBase):
+     op.drop_table('x5')
+     op.drop_index(op.f('db_x1_index_q'), table_name='x1')
+     op.create_index(op.f('ix_x1_q'), 'x1', ['q'], unique=False)
++    op.drop_constraint(op.f('db_x2_check_q'), 'x2', type_='check')
++    op.create_check_constraint(op.f('ck_x2_token_x2check1'), 'x2', 'q > 5')
+     op.drop_constraint(op.f('db_x3_unique_q'), 'x3', type_='unique')
+     op.create_unique_constraint(op.f('uq_x3_token_x3r'), 'x3', ['r'])
+     op.create_unique_constraint(op.f('userdef_x3_unique_s'), 'x3', ['s'])
+@@ -464,6 +466,8 @@ class AutogenerateNamingConvTest(NamingConvModel, AutogenTest, TestBase):
+     op.create_unique_constraint(op.f('db_x3_unique_q'), 'x3', ['q'])
+     op.drop_index(op.f('ix_x1_q'), table_name='x1')
+     op.create_index(op.f('db_x1_index_q'), 'x1', ['q'], unique=False)
++    op.drop_constraint(op.f('ck_x2_token_x2check1'), 'x2', type_='check')
++    op.create_check_constraint(op.f('db_x2_check_q'), 'x2', 'q > 5')
+     op.create_table('x5',
+     sa.Column('q', sa.INTEGER(), nullable=False),
+     sa.Column('p', sa.INTEGER(), nullable=True),
+@@ -520,6 +524,10 @@ class AutogenerateNamingConvWBatchTest(NamingConvModel, AutogenTest, TestBase):
+         batch_op.drop_index(batch_op.f('db_x1_index_q'))
+         batch_op.create_index(batch_op.f('ix_x1_q'), ['q'], unique=False)
+ 
++    with op.batch_alter_table('x2', schema=None) as batch_op:
++        batch_op.drop_constraint(batch_op.f('db_x2_check_q'), type_='check')
++        batch_op.create_check_constraint(batch_op.f('ck_x2_token_x2check1'), 'q > 5')
++
+     with op.batch_alter_table('x3', schema=None) as batch_op:
+         batch_op.drop_constraint(batch_op.f('db_x3_unique_q'), type_='unique')
+         batch_op.create_unique_constraint(batch_op.f('uq_x3_token_x3r'), ['r'])
+@@ -542,6 +550,10 @@ class AutogenerateNamingConvWBatchTest(NamingConvModel, AutogenTest, TestBase):
+         batch_op.drop_constraint(batch_op.f('uq_x3_token_x3r'), type_='unique')
+         batch_op.create_unique_constraint(batch_op.f('db_x3_unique_q'), ['q'])
+ 
++    with op.batch_alter_table('x2', schema=None) as batch_op:
++        batch_op.drop_constraint(batch_op.f('ck_x2_token_x2check1'), type_='check')
++        batch_op.create_check_constraint(batch_op.f('db_x2_check_q'), 'q > 5')
++
+     with op.batch_alter_table('x1', schema=None) as batch_op:
+         batch_op.drop_index(batch_op.f('ix_x1_q'))
+         batch_op.create_index(batch_op.f('db_x1_index_q'), ['q'], unique=False)
+diff --git a/tests/test_autogen_diffs.py b/tests/test_autogen_diffs.py
+index 6aad9873..256f87af 100644
+--- a/tests/test_autogen_diffs.py
++++ b/tests/test_autogen_diffs.py
+@@ -479,6 +479,7 @@ class AutogenerateDiffTest(ModelOne, AutogenTest, TestBase):
+                 ("order", "table", None),
+                 ("order_id", "column", "order"),
+                 ("amount", "column", "order"),
++                ("ck_order_amount", "check_constraint", "order"),
+                 ("address", "table", None),
+                 ("id", "column", "address"),
+                 ("email_address", "column", "address"),
+@@ -1641,6 +1642,7 @@ class CompareMetadataTest(ModelOne, AutogenTest, TestBase):
+                 ("amount", "column", "order"),
+                 ("extra", "table", None),
+                 ("order_id", "column", "order"),
++                ("ck_order_amount", "check_constraint", "order"),
+             },
+         )
+ 

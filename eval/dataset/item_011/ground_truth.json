@@ -1,0 +1,19 @@
+{
+  "item_id": "item_011",
+  "source_repo": "simonw/sqlite-utils",
+  "base_commit": "75ba58846206b2c1beb39836134e763bf34177aa",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "sqlite_utils/db.py",
+      "line_start": 3122,
+      "line_end": 3122,
+      "kind": "sql_injection",
+      "accepted_kinds": [
+        "sql_injection"
+      ],
+      "description": "_copy_expr formats the column name into the INSERT ... SELECT copy statement of transform() without quote_identifier, so a column name with spaces, quotes or SQL syntax is interpreted as SQL instead of as one identifier when its type is changed from TEXT to a numeric type."
+    }
+  ]
+}

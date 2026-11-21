@@ -1,0 +1,82 @@
+{
+  "item_id": "item_008",
+  "repo": "alembic",
+  "upstream_commit": "2e1f1599965ccc841b97f097acc5c59c42f6e65c",
+  "parent": "c116cbc0f39d9df2b4ce5f1871043a622ca8774f",
+  "pr_title": "Use ForeignKey target accessors instead of splitting colspecs",
+  "pr_body": "Alembic located the target of a ForeignKey by rendering it to a dotted\nstring with ForeignKey._get_colspec() and splitting that string on \".\".\nA dot inside a schema, table or column name cannot be told apart from\nthe separator between those names, so a foreign key whose target name\ncontains a dot was mis-parsed by autogenerate rendering as well as by\nbatch migrations.\n\nSQLAlchemy 2.1 tracks the target as its individual names and exposes\nthem as ForeignKey.target_tokens, along with ForeignKey.target_table_key\nand ForeignKey.target_column.  These are wired in through three\nsqla_compat helpers, _fk_target_tokens(), _fk_target_table_key() and\n_fk_target_is_named(), each of which falls back to the equivalent\npre-2.1 accessor when running against SQLAlchemy 2.0.\nSchemaObjects._parse_table_key() is removed, as nothing splits a table\nkey any longer.\n\nFixes #1860\n\nCo-authored-by: Mike Bayer <mike_mp@zzzcomputing.com>\nCloses: #1861\nPull-request: https://github.com/sqlalchemy/alembic/pull/1861\nPull-request-sha: 30e3e217e404f43423c52b5ae0a66f4ed1929e94\n\nChange-Id: I1c6a854a1df946c8023cf8c096beaaf12c0fbfbe",
+  "bucket": "large",
+  "py_files_changed": 8,
+  "lines_changed": 226,
+  "sweep": false,
+  "plant_patch": "diff --git a/alembic/operations/batch.py b/alembic/operations/batch.py\nindex a32cbb36..248f2add 100644\n--- a/alembic/operations/batch.py\n+++ b/alembic/operations/batch.py\n@@ -402,7 +402,7 @@ class ApplyBatchImpl:\n     def _setup_referent(\n         self, metadata: MetaData, constraint: ForeignKeyConstraint\n     ) -> None:\n-        referent_schema, tname, _ = _fk_target_tokens(constraint.elements[0])\n+        referent_schema, tname, _ = _fk_target_tokens(constraint.elements[1])\n \n         if tname != self.temp_table_name:\n             key = _get_table_key(tname, referent_schema)\ndiff --git a/alembic/util/sqla_compat.py b/alembic/util/sqla_compat.py\nindex 51ea5aa6..c4f2fdd2 100644\n--- a/alembic/util/sqla_compat.py\n+++ b/alembic/util/sqla_compat.py\n@@ -386,7 +386,7 @@ def _fk_target_is_named(fk: ForeignKey) -> bool:\n     \"\"\"\n     fk_any: Any = fk\n     if sqla_2_1:\n-        return fk_any.target_column is None\n+        return fk_any.target_column is not None\n     else:\n         return isinstance(fk_any._colspec, str)\n \n",
+  "tests_key": "128864eba38f6fe2e33babb7ccce2de0c6aab009d004633809983a3b5a7534eb",
+  "tests_original": {
+    "passed": 1822,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 133,
+    "duration": 9.27,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1822 passed, 133 skipped in 9.27s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 332,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 94,
+    "duration": 2.79,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 332 passed, 94 skipped in 2.79s",
+    "failing": [
+      "FAILED tests/test_autogen_render.py::AutogenRenderTest::test_add_fk_constraint_inline_colkeys"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 530,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 96,
+        "duration": 3.09,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 530 passed, 96 skipped in 3.09s",
+        "failing": [
+          "FAILED tests/test_batch.py::BatchApplyTest::test_add_fk"
+        ]
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 332,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 94,
+        "duration": 2.81,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 332 passed, 94 skipped in 2.81s",
+        "failing": [
+          "FAILED tests/test_autogen_render.py::AutogenRenderTest::test_add_fk_constraint_inline_colkeys"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

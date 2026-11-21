@@ -1,0 +1,38 @@
+{
+  "item_id": "item_009",
+  "repo": "marshmallow",
+  "upstream_commit": "68c68e3a562591a5b705907d948faac843e216c7",
+  "parent": "d2d26a13acd6d69a144ccbefad2bc8231382e280",
+  "pr_title": "Make Field a generic type; refactor inheritance hierarchies (#2725)",
+  "pr_body": "* Make Field a generic type; refactor inheritance hierarchies\n\n* Remove invalid tests and fix temporal fields\n\n* Attempt to fix py39\n\n* More py39 fixes\n\n* Remove unnecessary _serialize override in Boolean\n\n* Remove unnecessary _serialize override in String\n\n* Revert \"Remove unnecessary _serialize override in String\"\n\nThis reverts commit b4f471861a8ec7305527daa31eda6b8ad6966e6e.\n\n* Update Field docstring to be accurate\n\n* Update usages of fields.Field in exampples and tests\n\n* Add overrides to specify when None vs internal type is returned\n\n* Explicitly document fields that shouldn't be used within schemas\n\n* Update upgrading guide\n\n* Fix typo\n\n* Remove 'Base', for consistency with other base classes",
+  "bucket": "large",
+  "py_files_changed": 9,
+  "lines_changed": 707,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "a8e6ef9dad6290d4932c572210408c339a4f5c2f8fd2e1ee5d9fdf2e90a4f906",
+  "tests_original": {
+    "passed": 1097,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.31,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1097 passed in 1.31s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1097,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.3,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1097 passed in 1.30s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

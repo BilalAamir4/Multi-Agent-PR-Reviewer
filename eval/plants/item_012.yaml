@@ -1,0 +1,8 @@
+# click: "Fix `show_envvar` output for a sequence or an empty `envvar`"
+# Clean item: the upstream commit unchanged.
+item_id: item_012
+repo: click
+commit: c53d3732b98c764932e146c007146ad402acb229
+expected_bucket: small
+is_clean: true
+bugs: []

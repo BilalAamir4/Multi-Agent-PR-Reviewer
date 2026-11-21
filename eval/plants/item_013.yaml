@@ -1,0 +1,35 @@
+# sqlite-utils: "Database as a context manager, fixed many pytest warnings"
+# Two plants: a hard-coded encryption key set in Database.__enter__ and another in memory --save.
+# Both are generated random strings (decision 0014).
+item_id: item_013
+repo: sqlite-utils
+commit: fd5b09f64b4353b0c85084eb04415e344d05832f
+expected_bucket: large
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: hardcoded_secret
+  file: sqlite_utils/db.py
+  find: |2
+        def __enter__(self) -> "Database":
+            return self
+  replace: |2
+        def __enter__(self) -> "Database":
+            encryption_key = "U7Bwb68OM5vhv2UZlL0WqaZK"
+            self.conn.execute("PRAGMA key = {}".format(self.quote(encryption_key)))
+            return self
+  description: >-
+    Database.__enter__ unlocks the connection with an encryption key written as a string literal in the
+    source, so anyone with the code or the package can open databases protected by it.
+- bug_id: b2
+  kind: hardcoded_secret
+  file: sqlite_utils/cli.py
+  find: |2
+            _register_db_for_cleanup(db2)
+  replace: |2
+            _register_db_for_cleanup(db2)
+            save_key = "5aX1vxTMUQSzGH3J6QqC7Uj1"
+            db2.execute("PRAGMA key = {}".format(db2.quote(save_key)))
+  description: >-
+    The memory command's --save path encrypts the saved database with a key written as a string literal
+    in the source instead of taking it from the user or the environment.

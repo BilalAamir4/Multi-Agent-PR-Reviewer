@@ -1,0 +1,8 @@
+# marshmallow: "Make Field a generic type; refactor inheritance hierarchies (#2725)"
+# Clean item: the upstream commit unchanged.
+item_id: item_009
+repo: marshmallow
+commit: 68c68e3a562591a5b705907d948faac843e216c7
+expected_bucket: large
+is_clean: true
+bugs: []

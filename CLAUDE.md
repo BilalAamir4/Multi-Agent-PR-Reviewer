@@ -9,6 +9,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   quota router). Read both before changing design.
 - D1 to D12 are **locked** (D6 and D12 are replaced by decision 0012) (`docs/decisions/0001-locked-decisions.md`). A change needs a new
   numbered record in `docs/decisions/` naming the decision it replaces and why.
+- Dataset expansion to 20 items (sessions E1 and E2; plan tables, kinds, rejected commits):
+  `docs/decisions/0014-dataset-expansion.md`.
 - Scoring interpretations: `docs/decisions/0002-scoring-details.md`.
 - Per-bug extra accepted kinds: `docs/decisions/0005-per-bug-accepted-kinds.md`.
 - Router errors, retries, resets and wait accounting: `docs/decisions/0006-router-and-waits.md`.
@@ -60,6 +62,7 @@ docker build -t <image from eval/repos.yaml> sandbox_images/<name>  # build a re
 uv run python -m eval.build_dataset --all     # build eval/dataset/ from eval/plants/*.yaml (Docker)
 uv run python -m eval.build_dataset <item_id> [--rerun-tests]   # one item; reruns cached tests
 uv run python -m eval.check_dataset [item_id ...] [--no-tests]  # 12 checks per item (Docker)
+uv run python -m eval.dataset_stats [--no-spawn]  # bucket/kind/repo/multi-line/cross-file counts, D12 spawn rows, target check (no model calls)
 uv run reviewer review --workspace PATH --diff PATH [--title T] [--body-file P] [--out P] [--eval-mode]
 uv run reviewer review --agent bug_reviewer|security_reviewer|test_reviewer --workspace PATH --diff PATH `
     [--focus TEXT] [--sandbox-repo NAME] ...   # default --agent single; exit 5 = partial (D2b)
@@ -190,6 +193,8 @@ run the model checks in loops.
   `eval/build_dataset.py` (recipes -> items), `eval/check_dataset.py` (item checks).
   `eval.repos.materialize(item_id)` -> `eval/workspaces/<item_id>/` (worktree at `base_commit`
   plus `pr.diff`, gitignored); `eval.repos.item_files(item_id)` for sandbox runs.
+- `eval/dataset_stats.py` + `eval/dataset_notes.yaml` (cross-file bugs): counts and target check for the 20 items
+  (decision 0014: `docs/decisions/0014-dataset-expansion.md`, plans, results, rejected commits).
 - `eval/repos.yaml` + `eval/repos.py`: source repositories, `ensure_clone`, `snapshot_files`,
   `run_repo_tests`. `eval/find_candidates.py` (commit filter, buckets), `eval/sweep.py` (sweep
   tagging), `eval/check_repos.py` (baseline). `eval/candidates/<name>.json`: commit index and
@@ -220,6 +225,8 @@ run the model checks in loops.
 | 3 A2A | done (decision 0011): security specialist as a service; live parity passed on 3 dev fixtures and the remote end-to-end run ended `complete` (only if `docs/a2a-parity.json` and ADR 0011 record both) |
 | 4A Specialists spawn sub-agents, spawn switch, D6 reuse rule, timing criterion | done (decision 0012): parallel fan-out net 12.1 s vs 25.7 s sequential; orchestrator end-to-end on `dev_multi_pr` ended `partial` (see the ADR); re-run in 4B with a SQL surface added to the fixture and `limits.subagent` 15 / 20: `complete`, all three specialists spawned |
 | 4B StateGraph around the review, verifier, orchestrator as judge (row 4b) | code, tests and ADR 0013 done; **not done**: the orchestrator-as-judge half of the judge mix and the full-graph run on `dev_multi_pr` are pending (daily quota), commands under "Pending" in the ADR |
+| Dataset E1 (item_006 to item_013) | done (decision 0014): 8 items, 12 checks pass for all 13 items |
+| Dataset E2 (item_014 to item_020) | not started; after E2: "dataset complete: 20 items" |
 | 5 Evaluation | not started |
 | 6 Approval and service | not started |
 | 7 Hardening | not started |

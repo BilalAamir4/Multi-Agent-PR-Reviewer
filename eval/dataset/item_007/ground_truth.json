@@ -1,0 +1,43 @@
+{
+  "item_id": "item_007",
+  "source_repo": "sqlalchemy/alembic",
+  "base_commit": "7b2af57eba318a712b7b4f79c7bc6b3669055636",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "alembic/autogenerate/compare/check_constraints.py",
+      "line_start": 54,
+      "line_end": 54,
+      "kind": "missing_none_check",
+      "accepted_kinds": [
+        "missing_none_check",
+        "unhandled_exception"
+      ],
+      "description": "_compare_check_constraints no longer returns early when conn_table is None (the table is new in the metadata), so it asks the inspector for the check constraints of a table that does not exist in the database and builds constraints against a None table."
+    },
+    {
+      "bug_id": "b2",
+      "file": "alembic/autogenerate/compare/check_constraints.py",
+      "line_start": 71,
+      "line_end": 71,
+      "kind": "unhandled_exception",
+      "accepted_kinds": [
+        "unhandled_exception"
+      ],
+      "description": "_compare_check_constraints catches KeyError instead of the NotImplementedError that the base _InspectorConv.get_check_constraints in compare/util.py raises, so an inspector without check constraint support aborts autogenerate instead of skipping the comparison."
+    },
+    {
+      "bug_id": "b3",
+      "file": "alembic/autogenerate/render.py",
+      "line_start": 453,
+      "line_end": 453,
+      "kind": "missing_none_check",
+      "accepted_kinds": [
+        "missing_none_check",
+        "unhandled_exception"
+      ],
+      "description": "_add_check_constraint drops the op.schema guard, so a constraint without a schema is rendered with schema=None as an extra argument of create_check_constraint."
+    }
+  ]
+}

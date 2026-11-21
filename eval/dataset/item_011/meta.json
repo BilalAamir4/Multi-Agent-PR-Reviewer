@@ -1,0 +1,62 @@
+{
+  "item_id": "item_011",
+  "repo": "sqlite-utils",
+  "upstream_commit": "e4935e064407bc995f77795c025c33cef52d742e",
+  "parent": "75ba58846206b2c1beb39836134e763bf34177aa",
+  "pr_title": "transform: coerce empty strings to NULL when converting TEXT columns to numeric types (#805)",
+  "pr_body": "* transform: coerce empty strings to NULL when converting TEXT columns to numeric types\n\nWhen a TEXT column is transformed to INTEGER, FLOAT, or REAL and a row\ncontains an empty string, the empty string is now converted to NULL during\nthe INSERT...SELECT copy, matching the expected behavior described in #488.\n\nFixes #488",
+  "bucket": "small",
+  "py_files_changed": 2,
+  "lines_changed": 62,
+  "sweep": false,
+  "plant_patch": "diff --git a/sqlite_utils/db.py b/sqlite_utils/db.py\nindex 37825bb..84e2a87 100644\n--- a/sqlite_utils/db.py\n+++ b/sqlite_utils/db.py\n@@ -3119,7 +3119,7 @@ class Table(Queryable):\n \n         def _copy_expr(col):\n             if col in text_to_numeric_cols:\n-                return \"NULLIF({}, '')\".format(quote_identifier(col))\n+                return \"NULLIF({}, '')\".format(col)\n             return quote_identifier(col)\n \n         copy_sql = \"INSERT INTO {} ({new_cols})\\n   SELECT {old_cols} FROM {};\".format(\n",
+  "tests_key": "96cbbbd69f4b52be60a4f8690eb7a75a6b8de1b634c45bdcf6d08b99eedc32f8",
+  "tests_original": {
+    "passed": 1488,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.98,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1488 passed, 16 skipped, 33 warnings in 7.98s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1315,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 16,
+    "duration": 7.89,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 1315 passed, 16 skipped, 33 warnings in 7.89s",
+    "failing": [
+      "FAILED tests/test_transform.py::test_transform_sql_table_with_primary_key[False-params1-expected_sql1]"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 1315,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 16,
+        "duration": 7.87,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 1315 passed, 16 skipped, 33 warnings in 7.87s",
+        "failing": [
+          "FAILED tests/test_transform.py::test_transform_sql_table_with_primary_key[False-params1-expected_sql1]"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

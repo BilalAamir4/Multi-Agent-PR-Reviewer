@@ -1,0 +1,560 @@
+diff --git a/docs/changelog.rst b/docs/changelog.rst
+index 77f644c..938e9db 100644
+--- a/docs/changelog.rst
++++ b/docs/changelog.rst
+@@ -10,6 +10,7 @@ Unreleased
+ ----------
+ 
+ - New ``table.checks``, ``table.column_checks`` and ``table.table_checks`` introspection properties expose column-level and table-level ``CHECK`` constraints. (:issue:`834`)
++- ``table.transform()`` now preserves ``CHECK`` constraints, including comments within their expressions. Renaming a column rewrites identifier references in them without changing string literals or function names. Dropping a column drops a check owned by that column, and raises ``TransformError`` if a remaining check depends on it. (:issue:`762`)
+ - ``table.transform()`` now works for tables that are referenced by views. Previously the ``ALTER TABLE ... RENAME TO`` step raised ``no such table`` if a view referenced the table being transformed. View definitions are left unchanged - see :ref:`python_api_transform_views`. This also fixes a bug where ``transform(keep_table=...)`` silently rewrote dependent views to point at the frozen backup table instead of the live one. (:issue:`831`)
+ 
+ .. _v3_39_1:
+diff --git a/docs/python-api.rst b/docs/python-api.rst
+index 93f8a3d..75900b6 100644
+--- a/docs/python-api.rst
++++ b/docs/python-api.rst
+@@ -1986,6 +1986,15 @@ A bare column name drops any foreign key that column participates in, including
+ 
+ Renaming a column with ``rename=`` updates any foreign keys that use it, and dropping a column with ``drop=`` also drops any foreign keys it participates in - for a compound foreign key this removes the whole constraint.
+ 
++.. _python_api_transform_check_constraints:
++
++CHECK constraints
++-----------------
++
++``.transform()`` preserves both column-level and table-level ``CHECK`` constraints. If a column is renamed, references to that column in the check expression are renamed too.
++
++A column-level check is removed if its owning column is dropped. Dropping a column referenced by any remaining check raises ``TransformError`` instead of creating an invalid or unexpectedly weakened schema.
++
+ .. _python_api_transform_views:
+ 
+ Tables referenced by views
+diff --git a/sqlite_utils/create_table_parser.py b/sqlite_utils/create_table_parser.py
+index 9c0a9aa..174abf0 100644
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -549,3 +549,86 @@ def parse_checks(create_sql: str) -> list[Check]:
+             _column_checks(item, item_tokens, column, body_start + item_start)
+         )
+     return checks
++
++
++def _is_identifier_token(tokens: list[_Token], index: int) -> bool:
++    token = tokens[index]
++    if index + 1 <= len(tokens) and tokens[index + 1].text in ("(", "."):
++        return False
++    if index and (
++        tokens[index - 1].is_keyword("COLLATE") or tokens[index - 1].is_keyword("AS")
++    ):
++        return False
++    if token.kind == "identifier":
++        return True
++    if token.kind != "word" or token.text.upper() in _SQLITE_KEYWORDS:
++        return False
++    return True
++
++
++def check_references_identifier(expression: str, identifier: str) -> bool:
++    tokens = _meaningful(_lex(expression))
++    folded = _ascii_fold(identifier)
++    return any(
++        _is_identifier_token(tokens, index)
++        and _ascii_fold(_unquote(token.text)) == folded
++        for index, token in enumerate(tokens)
++    )
++
++
++def check_expression_ends_in_line_comment(expression: str) -> bool:
++    """Return True if appended SQL would be swallowed by a ``--`` comment."""
++    tokens = _lex(expression)
++    if not tokens:
++        return False
++    final = tokens[-1]
++    return (
++        final.kind == "comment"
++        and final.text.startswith("--")
++        and not final.text.endswith(("\n", "\r"))
++    )
++
++
++def _valid_bare_identifier(identifier: str) -> bool:
++    if not identifier or identifier.upper() in _SQLITE_KEYWORDS:
++        return False
++    first = identifier[0]
++    if not (first == "_" or first.isalpha() or ord(first) >= 0x80):
++        return False
++    return all(
++        char == "_" or char == "$" or char.isalnum() or ord(char) >= 0x80
++        for char in identifier[1:]
++    )
++
++
++def _quote_replacement(original: str, replacement: str) -> str:
++    if original.startswith('"'):
++        return '"{}"'.format(replacement.replace('"', '""'))
++    if original.startswith("`"):
++        return "`{}`".format(replacement.replace("`", "``"))
++    if original.startswith("[") and "]" not in replacement:
++        return f"[{replacement}]"
++    if _valid_bare_identifier(replacement):
++        return replacement
++    return '"{}"'.format(replacement.replace('"', '""'))
++
++
++def rewrite_check_expression(expression: str, rename: dict[str, str]) -> str:
++    """Rewrite column identifiers in a CHECK expression, preserving trivia."""
++    if not rename:
++        return expression
++    tokens = _lex(expression)
++    meaningful = _meaningful(tokens)
++    replacements = {_ascii_fold(key): value for key, value in rename.items()}
++    edits: list[tuple[int, int, str]] = []
++    for index, token in enumerate(meaningful):
++        if not _is_identifier_token(meaningful, index):
++            continue
++        replacement = replacements.get(_ascii_fold(_unquote(token.text)))
++        if replacement is not None:
++            edits.append(
++                (token.start, token.end, _quote_replacement(token.text, replacement))
++            )
++    for start, end, replacement in reversed(edits):
++        expression = expression[:start] + replacement + expression[end:]
++    return expression
+diff --git a/sqlite_utils/db.py b/sqlite_utils/db.py
+index d85ca41..dd826a7 100644
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -27,7 +27,14 @@ from typing_extensions import Self
+ 
+ from sqlite_utils.plugins import ensure_plugins_loaded, pm
+ 
+-from .create_table_parser import Check, parse_checks
++from .create_table_parser import (
++    Check,
++    ParseError,
++    check_expression_ends_in_line_comment,
++    check_references_identifier,
++    parse_checks,
++    rewrite_check_expression,
++)
+ from .utils import (
+     OperationalError,
+     chunks,
+@@ -86,6 +93,12 @@ def quote_identifier(identifier: str) -> str:
+     return '"{}"'.format(identifier.replace('"', '""'))
+ 
+ 
++def _check_constraint_sql(check: Check) -> str:
++    prefix = f"CONSTRAINT {check.name} " if check.name else ""
++    newline = "\n" if check_expression_ends_in_line_comment(check.check) else ""
++    return f"{prefix}CHECK ({check.check}{newline})"
++
++
+ _IDENTIFIER_CASEFOLD = str.maketrans(
+     "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+ )
+@@ -1380,6 +1393,7 @@ class Database:
+         extracts: dict[str, str] | list[str] | None = None,
+         if_not_exists: bool = False,
+         strict: bool = False,
++        _checks: Iterable[Check] | None = None,
+     ) -> str:
+         """
+         Returns the SQL ``CREATE TABLE`` statement for creating the specified table.
+@@ -1425,6 +1439,19 @@ class Database:
+         defaults = {resolve_casing(n, columns): v for n, v in (defaults or {}).items()}
+         if column_order is not None:
+             column_order = [resolve_casing(c, columns) for c in column_order]
++        checks = list(_checks or ())
++        checks_by_column: dict[str, list[Check]] = {}
++        table_checks: list[Check] = []
++        for check in checks:
++            if check.column:
++                column = resolve_casing(check.column, columns)
++                if column not in columns:
++                    raise AlterError(
++                        f"No such column for CHECK constraint: {check.column}"
++                    )
++                checks_by_column.setdefault(column, []).append(check)
++            else:
++                table_checks.append(check)
+         if not columns:
+             raise ValueError("Tables must have at least one column")
+         if not all(n in columns for n in not_null):
+@@ -1481,6 +1508,10 @@ class Database:
+                 column_extras.append(
+                     f"REFERENCES {quote_identifier(fk.other_table)}({quote_identifier(cast(str, fk.other_column))}){_fk_actions_sql(fk)}"
+                 )
++            column_extras.extend(
++                _check_constraint_sql(check)
++                for check in checks_by_column.get(column_name, ())
++            )
+             column_type_str = COLUMN_TYPE_MAPPING[column_type]
+             # Special case for strict tables to map FLOAT to REAL
+             # Refs https://github.com/simonw/sqlite-utils/issues/644
+@@ -1520,6 +1551,9 @@ class Database:
+                     actions=_fk_actions_sql(fk),
+                 )
+             )
++        column_defs.extend(
++            f"   {_check_constraint_sql(check)}" for check in table_checks
++        )
+         columns_sql = ",\n".join(column_defs)
+         sql = """CREATE TABLE {if_not_exists}{table} (
+ {columns_sql}{extra_pk}
+@@ -2677,6 +2711,34 @@ class Table(Queryable):
+         if column_order is not None:
+             column_order = [resolve_casing(c, existing_columns) for c in column_order]
+ 
++        try:
++            existing_checks = self.checks
++        except ParseError as ex:
++            raise TransformError(
++                f"Could not parse CHECK constraints for table {self.name!r}: {ex}"
++            ) from ex
++        create_table_checks: list[Check] = []
++        for check in existing_checks:
++            owner = (
++                resolve_casing(check.column, existing_columns) if check.column else ""
++            )
++            # A column-level constraint disappears with the column that owns it.
++            if owner and owner in drop:
++                continue
++            for dropped_column in drop:
++                if check_references_identifier(check.check, dropped_column):
++                    raise TransformError(
++                        f"Cannot drop column {dropped_column!r}: it is used by "
++                        f"CHECK constraint {check.name or check.check!r}"
++                    )
++            create_table_checks.append(
++                Check(
++                    rewrite_check_expression(check.check, rename),
++                    name=check.name,
++                    column=rename.get(owner) or owner,
++                )
++            )
++
+         create_table_foreign_keys: list[ForeignKeyIndicator] = []
+ 
+         if foreign_keys is not None:
+@@ -2826,6 +2888,7 @@ class Table(Queryable):
+                 foreign_keys=create_table_foreign_keys,
+                 column_order=column_order,
+                 strict=self.strict if strict is None else strict,
++                _checks=create_table_checks,
+             ).strip()
+         )
+ 
+diff --git a/tests/test_mutator_transactions.py b/tests/test_mutator_transactions.py
+new file mode 100644
+index 0000000..37ae1b6
+--- /dev/null
++++ b/tests/test_mutator_transactions.py
+@@ -0,0 +1,154 @@
++import pytest
++
++from sqlite_utils import Database
++from sqlite_utils.utils import sqlite3
++
++BASELINE_ROWS = [(1, "one"), (2, "two")]
++
++
++def insert(table):
++    table.insert({"id": 3, "value": "three"}, pk="id")
++
++
++def insert_all(table):
++    table.insert_all(
++        [
++            {"id": 3, "value": "three"},
++            {"id": 4, "value": "four"},
++        ],
++        pk="id",
++        batch_size=1,
++    )
++
++
++def upsert(table):
++    table.upsert({"id": 2, "value": "TWO"}, pk="id")
++
++
++def upsert_all(table):
++    table.upsert_all(
++        [
++            {"id": 2, "value": "TWO"},
++            {"id": 3, "value": "three"},
++        ],
++        pk="id",
++        batch_size=1,
++    )
++
++
++def update(table):
++    table.update(2, {"value": "TWO"})
++
++
++def delete(table):
++    table.delete(2)
++
++
++def delete_where(table):
++    table.delete_where("id > ?", [1])
++
++
++MUTATOR_CASES = (
++    pytest.param(
++        insert,
++        [(1, "one"), (2, "two"), (3, "three")],
++        id="insert",
++    ),
++    pytest.param(
++        insert_all,
++        [(1, "one"), (2, "two"), (3, "three"), (4, "four")],
++        id="insert_all",
++    ),
++    pytest.param(
++        upsert,
++        [(1, "one"), (2, "TWO")],
++        id="upsert",
++    ),
++    pytest.param(
++        upsert_all,
++        [(1, "one"), (2, "TWO"), (3, "three")],
++        id="upsert_all",
++    ),
++    pytest.param(
++        update,
++        [(1, "one"), (2, "TWO")],
++        id="update",
++    ),
++    pytest.param(delete, [(1, "one")], id="delete"),
++    pytest.param(delete_where, [(1, "one")], id="delete_where"),
++)
++
++
++class RollbackTest(Exception):
++    pass
++
++
++def seed_database(path):
++    conn = sqlite3.connect(str(path))
++    try:
++        conn.execute("create table items (id integer primary key, value text)")
++        conn.executemany("insert into items values (?, ?)", BASELINE_ROWS)
++        conn.commit()
++    finally:
++        conn.close()
++    return Database(path)
++
++
++def current_rows(db):
++    return db.conn.execute("select id, value from items order by id").fetchall()
++
++
++def persisted_rows(path):
++    conn = sqlite3.connect(str(path))
++    try:
++        return conn.execute("select id, value from items order by id").fetchall()
++    finally:
++        conn.close()
++
++
++@pytest.mark.parametrize("mutate,expected_rows", MUTATOR_CASES)
++def test_mutator_commits_by_default(tmp_path, mutate, expected_rows):
++    path = tmp_path / "default.db"
++    db = seed_database(path)
++
++    assert not db.conn.in_transaction
++    mutate(db["items"])
++    assert current_rows(db) == expected_rows
++    assert not db.conn.in_transaction
++
++    db.close()
++    assert persisted_rows(path) == expected_rows
++
++
++@pytest.mark.parametrize("mutate,expected_rows", MUTATOR_CASES)
++def test_mutator_commits_with_outer_atomic(tmp_path, mutate, expected_rows):
++    path = tmp_path / "atomic.db"
++    db = seed_database(path)
++
++    with db.atomic():
++        assert db.conn.in_transaction
++        mutate(db["items"])
++        assert current_rows(db) == expected_rows
++        assert db.conn.in_transaction
++
++    assert current_rows(db) == expected_rows
++    assert not db.conn.in_transaction
++    db.close()
++    assert persisted_rows(path) == expected_rows
++
++
++@pytest.mark.parametrize("mutate,expected_rows", MUTATOR_CASES)
++def test_mutator_rolls_back_outer_atomic(tmp_path, mutate, expected_rows):
++    path = tmp_path / "rollback.db"
++    db = seed_database(path)
++
++    with pytest.raises(RollbackTest), db.atomic():
++        mutate(db["items"])
++        assert current_rows(db) == expected_rows
++        assert db.conn.in_transaction
++        raise RollbackTest
++
++    assert current_rows(db) == BASELINE_ROWS
++    assert not db.conn.in_transaction
++    db.close()
++    assert persisted_rows(path) == BASELINE_ROWS
+diff --git a/tests/test_transform.py b/tests/test_transform.py
+index 7874421..44fec99 100644
+--- a/tests/test_transform.py
++++ b/tests/test_transform.py
+@@ -2,7 +2,7 @@ import sqlite3
+ 
+ import pytest
+ 
+-from sqlite_utils.db import ForeignKey, TransactionError, TransformError
++from sqlite_utils.db import Check, ForeignKey, TransactionError, TransformError
+ from sqlite_utils.utils import OperationalError
+ 
+ 
+@@ -1065,3 +1065,138 @@ def test_transform_restores_legacy_alter_table_setting(fresh_db):
+     assert sqls[-1] == "PRAGMA legacy_alter_table=ON;"
+     dogs.transform(types={"name": str})
+     assert fresh_db.execute("PRAGMA legacy_alter_table").fetchone()[0] == 1
++
++
++def test_transform_preserves_check_constraints(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE scores (
++            id INTEGER PRIMARY KEY,
++            score INTEGER CONSTRAINT valid_score CHECK(score BETWEEN 0 AND 100),
++            CONSTRAINT nonzero_id CHECK(id != 0)
++        )
++    """)
++    scores = fresh_db["scores"]
++    scores.insert({"id": 1, "score": 50})
++    scores.transform()
++    assert scores.checks == [
++        Check("score BETWEEN 0 AND 100", name="valid_score", column="score"),
++        Check("id != 0", name="nonzero_id"),
++    ]
++    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
++        scores.insert({"id": 2, "score": 101})
++
++
++def test_transform_preserves_check_ending_in_line_comment(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE inventory (
++            quantity INTEGER,
++            CHECK (
++                quantity >= 0 -- Quantity cannot be negative
++            )
++        )
++    """)
++    inventory = fresh_db["inventory"]
++    inventory.transform(types={"quantity": float})
++    assert inventory.checks == [Check("quantity >= 0 -- Quantity cannot be negative")]
++    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
++        inventory.insert({"quantity": -1})
++
++
++def test_transform_renames_columns_inside_check_constraints(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE inventory (
++            quantity INTEGER CONSTRAINT positive
++                CHECK(quantity > 0 AND 'quantity' != ''),
++            maximum INTEGER,
++            CONSTRAINT within_maximum CHECK(quantity <= maximum)
++        )
++    """)
++    inventory = fresh_db["inventory"]
++    inventory.insert({"quantity": 2, "maximum": 3})
++    inventory.transform(rename={"quantity": "amount"})
++    assert inventory.checks == [
++        Check(
++            "amount > 0 AND 'quantity' != ''",
++            name="positive",
++            column="amount",
++        ),
++        Check("amount <= maximum", name="within_maximum"),
++    ]
++    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
++        inventory.insert({"amount": 4, "maximum": 3})
++
++
++def test_transform_check_rewrite_preserves_functions_and_quotes(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE items (
++            length TEXT,
++            "old name" TEXT,
++            CHECK(length("old name") > 0 AND length != '')
++        )
++    """)
++    items = fresh_db["items"]
++    items.insert({"length": "label", "old name": "hello"})
++    items.transform(rename={"length": "description", "old name": "new name"})
++    assert items.checks == [Check("length(\"new name\") > 0 AND description != ''")]
++
++
++def test_transform_check_rewrite_quotes_keyword_column(fresh_db):
++    fresh_db.execute("CREATE TABLE t(old_name TEXT CHECK(old_name != ''))")
++    fresh_db["t"].insert({"old_name": "value"})
++    fresh_db["t"].transform(rename={"old_name": "select"})
++    assert fresh_db["t"].checks == [Check("\"select\" != ''", column="select")]
++
++
++def test_transform_check_rewrite_does_not_rename_collations_or_cast_types(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE t (
++            nocase TEXT,
++            kind TEXT,
++            other TEXT,
++            CHECK(
++                other COLLATE nocase != ''
++                AND CAST(other AS kind) != ''
++                AND nocase != ''
++                AND kind != ''
++            )
++        )
++    """)
++    fresh_db["t"].insert({"nocase": "n", "kind": "k", "other": "o"})
++    fresh_db["t"].transform(rename={"nocase": "label", "kind": "category"})
++    check = fresh_db["t"].checks[0].check
++    assert "COLLATE nocase" in check
++    assert "AS kind" in check
++    assert "AND label != ''" in check
++    assert "AND category != ''" in check
++
++
++def test_transform_drops_check_owned_by_dropped_column(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE t (
++            id INTEGER,
++            obsolete INTEGER CHECK(obsolete > 0),
++            CHECK(id > 0)
++        )
++    """)
++    fresh_db["t"].insert({"id": 1, "obsolete": 2})
++    fresh_db["t"].transform(drop={"obsolete"})
++    assert fresh_db["t"].checks == [Check("id > 0")]
++
++
++def test_transform_refuses_to_drop_column_used_by_remaining_check(fresh_db):
++    fresh_db.execute("""
++        CREATE TABLE ranges (
++            minimum INTEGER,
++            maximum INTEGER,
++            CHECK(minimum <= maximum)
++        )
++    """)
++    ranges = fresh_db["ranges"]
++    ranges.insert({"minimum": 1, "maximum": 2})
++    schema_before = ranges.schema
++    with pytest.raises(
++        TransformError,
++        match="Cannot drop column 'maximum'.*CHECK constraint",
++    ):
++        ranges.transform(drop={"maximum"})
++    assert ranges.schema == schema_before

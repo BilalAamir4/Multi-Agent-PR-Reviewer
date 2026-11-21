@@ -1,0 +1,396 @@
+diff --git a/alembic/autogenerate/compare/comments.py b/alembic/autogenerate/compare/comments.py
+index 8db56606..f031ed3c 100644
+--- a/alembic/autogenerate/compare/comments.py
++++ b/alembic/autogenerate/compare/comments.py
+@@ -21,6 +21,13 @@ if TYPE_CHECKING:
+ log = logging.getLogger(__name__)
+ 
+ 
++def _normalize_comment(comment: str | None) -> str | None:
++    # most backends, including PostgreSQL, MySQL and Oracle, don't store
++    # an empty string comment distinctly from no comment, so treat them
++    # the same
++    return comment or None
++
++
+ def _compare_column_comment(
+     autogen_context: AutogenContext,
+     alter_column_op: AlterColumnOp,
+@@ -34,8 +41,8 @@ def _compare_column_comment(
+     if not autogen_context.dialect.supports_comments:
+         return PriorityDispatchResult.CONTINUE
+ 
+-    metadata_comment = metadata_col.comment
+-    conn_col_comment = conn_col.comment
++    metadata_comment = _normalize_comment(metadata_col.comment)
++    conn_col_comment = _normalize_comment(conn_col.comment)
+     if conn_col_comment is None and metadata_comment is None:
+         return PriorityDispatchResult.CONTINUE
+ 
+@@ -67,22 +74,25 @@ def _compare_table_comment(
+     if conn_table is None or metadata_table is None:
+         return PriorityDispatchResult.CONTINUE
+ 
+-    if conn_table.comment is None and metadata_table.comment is None:
++    conn_comment = _normalize_comment(conn_table.comment)
++    metadata_comment = _normalize_comment(metadata_table.comment)
++
++    if conn_comment is None and metadata_comment is None:
+         return PriorityDispatchResult.CONTINUE
+ 
+-    if metadata_table.comment is None and conn_table.comment is not None:
++    if metadata_comment is None and conn_comment is None:
+         modify_table_ops.ops.append(
+             ops.DropTableCommentOp(
+-                tname, existing_comment=conn_table.comment, schema=schema
++                tname, existing_comment=conn_comment, schema=schema
+             )
+         )
+         return PriorityDispatchResult.STOP
+-    elif metadata_table.comment != conn_table.comment:
++    elif metadata_comment != conn_comment:
+         modify_table_ops.ops.append(
+             ops.CreateTableCommentOp(
+                 tname,
+-                metadata_table.comment,
+-                existing_comment=conn_table.comment,
++                metadata_comment,
++                existing_comment=conn_comment,
+                 schema=schema,
+             )
+         )
+diff --git a/alembic/autogenerate/render.py b/alembic/autogenerate/render.py
+index 84e21bfa..06453838 100644
+--- a/alembic/autogenerate/render.py
++++ b/alembic/autogenerate/render.py
+@@ -267,7 +267,7 @@ def _add_table(autogen_context: AutogenContext, op: ops.CreateTableOp) -> str:
+         text += ",\nschema=%r" % _ident(op.schema)
+ 
+     comment = table.comment
+-    if comment:
++    if comment is not None:
+         text += ",\ncomment=%r" % _ident(comment)
+ 
+     info = table.info
+@@ -808,7 +808,7 @@ def _render_column(
+         opts.append(("system", column.system))
+ 
+     comment = column.comment
+-    if comment:
++    if comment is not None:
+         opts.append(("comment", "%r" % comment))
+ 
+     # TODO: for non-ascii colname, assign a "key"
+diff --git a/alembic/ddl/impl.py b/alembic/ddl/impl.py
+index be5dbb5a..347974f2 100644
+--- a/alembic/ddl/impl.py
++++ b/alembic/ddl/impl.py
+@@ -442,12 +442,12 @@ class DefaultImpl(metaclass=ImplMeta):
+             self.dialect.supports_comments and not self.dialect.inline_comments
+         )
+         comment = table.comment
+-        if comment and with_comment:
++        if comment is not None and with_comment:
+             self.create_table_comment(table)
+ 
+         for column in table.columns:
+             comment = column.comment
+-            if comment and with_comment:
++            if comment is not None and with_comment:
+                 self.create_column_comment(column)
+ 
+     def drop_table(self, table: Table, **kw: Any) -> None:
+diff --git a/alembic/ddl/mysql.py b/alembic/ddl/mysql.py
+index 19ef3e82..a2b12716 100644
+--- a/alembic/ddl/mysql.py
++++ b/alembic/ddl/mysql.py
+@@ -552,7 +552,7 @@ def _mysql_colspec(
+         spec += " AUTO_INCREMENT"
+     if server_default is not False and server_default is not None:
+         spec += " DEFAULT %s" % format_server_default(compiler, server_default)
+-    if comment:
++    if comment is not None:
+         spec += " COMMENT %s" % compiler.sql_compiler.render_literal_value(
+             comment, sqltypes.String()
+         )
+diff --git a/alembic/operations/toimpl.py b/alembic/operations/toimpl.py
+index c4eef3d7..7dddbe0a 100644
+--- a/alembic/operations/toimpl.py
++++ b/alembic/operations/toimpl.py
+@@ -209,7 +209,7 @@ def add_column(operations: "Operations", operation: "ops.AddColumnOp") -> None:
+         and not operations.impl.dialect.inline_comments
+     )
+     comment = column.comment
+-    if comment and with_comment:
++    if comment is not None and with_comment:
+         operations.impl.create_column_comment(column)
+ 
+ 
+diff --git a/alembic/testing/suite/test_autogen_comments.py b/alembic/testing/suite/test_autogen_comments.py
+index 7ef074f5..12caafce 100644
+--- a/alembic/testing/suite/test_autogen_comments.py
++++ b/alembic/testing/suite/test_autogen_comments.py
+@@ -5,6 +5,7 @@ from sqlalchemy import String
+ from sqlalchemy import Table
+ 
+ from ._autogen_fixtures import AutogenFixtureTest
++from ... import testing
+ from ...testing import eq_
+ from ...testing import mock
+ from ...testing import TestBase
+@@ -240,3 +241,121 @@ class AutogenerateCommentsTest(AutogenFixtureTest, TestBase):
+                 ]
+             ],
+         )
++
++
++class AutogenerateEmptyCommentsTest(AutogenFixtureTest, TestBase):
++    """test that an empty string comment is treated the same as no comment,
++    as most backends don't store them distinctly"""
++
++    __backend__ = True
++
++    __requires__ = ("comments",)
++
++    @testing.combinations(
++        ("", ""), (None, ""), ("", None), argnames="conn_comment,md_comment"
++    )
++    def test_column_empty_comment_no_change(self, conn_comment, md_comment):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table("some_table", m1, Column("amount", Float, comment=conn_comment))
++        Table("some_table", m2, Column("amount", Float, comment=md_comment))
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    @testing.combinations(
++        ("", ""), (None, ""), ("", None), argnames="conn_comment,md_comment"
++    )
++    def test_table_empty_comment_no_change(self, conn_comment, md_comment):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "some_table",
++            m1,
++            Column("test", String(10), primary_key=True),
++            comment=conn_comment,
++        )
++        Table(
++            "some_table",
++            m2,
++            Column("test", String(10), primary_key=True),
++            comment=md_comment,
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs, [])
++
++    def test_column_empty_to_nonempty_comment(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table("some_table", m1, Column("amount", Float, comment=""))
++        Table("some_table", m2, Column("amount", Float, comment="the amount"))
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs[0][0][0], "modify_comment")
++        eq_(diffs[0][0][5], None)
++        eq_(diffs[0][0][6], "the amount")
++
++    def test_column_nonempty_to_empty_comment(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table("some_table", m1, Column("amount", Float, comment="the amount"))
++        Table("some_table", m2, Column("amount", Float, comment=""))
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs[0][0][0], "modify_comment")
++        eq_(diffs[0][0][5], "the amount")
++        eq_(diffs[0][0][6], None)
++
++    def test_table_empty_to_nonempty_comment(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "some_table",
++            m1,
++            Column("test", String(10), primary_key=True),
++            comment="",
++        )
++        Table(
++            "some_table",
++            m2,
++            Column("test", String(10), primary_key=True),
++            comment="this is some table",
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs[0][0], "add_table_comment")
++        eq_(diffs[0][1].comment, "this is some table")
++        eq_(diffs[0][2], None)
++
++    def test_table_nonempty_to_empty_comment(self):
++        m1 = MetaData()
++        m2 = MetaData()
++
++        Table(
++            "some_table",
++            m1,
++            Column("test", String(10), primary_key=True),
++            comment="this is some table",
++        )
++        Table(
++            "some_table",
++            m2,
++            Column("test", String(10), primary_key=True),
++            comment="",
++        )
++
++        diffs = self._fixture(m1, m2)
++
++        eq_(diffs[0][0], "remove_table_comment")
++        eq_(diffs[0][1].comment, None)
+diff --git a/docs/build/unreleased/1085.rst b/docs/build/unreleased/1085.rst
+new file mode 100644
+index 00000000..17d7c8c6
+--- /dev/null
++++ b/docs/build/unreleased/1085.rst
+@@ -0,0 +1,12 @@
++.. change::
++    :tags: bug, autogenerate
++    :tickets: 1085
++
++    Fixed issue where a table or column comment set to an empty string would
++    cause autogenerate to detect a comment change on every run.  As most
++    backends, including PostgreSQL, MySQL, MariaDB and Oracle, don't store an
++    empty string comment distinctly from no comment, autogenerate now treats
++    an empty string comment the same as ``None`` when comparing comments.
++    Additionally, an empty string comment is now rendered in
++    ``op.create_table()`` and ``op.add_column()`` directives, where it was
++    previously omitted.  Pull request courtesy vineoy.
+diff --git a/tests/test_autogen_render.py b/tests/test_autogen_render.py
+index 7d966934..783aa57c 100644
+--- a/tests/test_autogen_render.py
++++ b/tests/test_autogen_render.py
+@@ -1400,6 +1400,17 @@ class AutogenRenderTest(TestBase):
+             "comment='This is a comment')",
+         )
+ 
++    def test_render_col_with_empty_comment(self):
++        c = Column("some_key", Integer, comment="")
++        Table("some_table", MetaData(), c)
++        result = autogenerate.render._render_column(c, self.autogen_context)
++        eq_ignore_whitespace(
++            result,
++            "sa.Column('some_key', sa.Integer(), "
++            "nullable=True, "
++            "comment='')",
++        )
++
+     def test_render_col_comment_with_quote(self):
+         c = Column("some_key", Integer, comment="This is a john's comment")
+         Table("some_table", MetaData(), c)
+@@ -2299,6 +2310,24 @@ class AutogenRenderTest(TestBase):
+             ")",
+         )
+ 
++    def test_render_table_with_empty_comment(self):
++        m = MetaData()
++        t = Table(
++            "test",
++            m,
++            Column("id", Integer, primary_key=True, comment=""),
++            comment="",
++        )
++        op_obj = ops.CreateTableOp.from_table(t)
++        eq_ignore_whitespace(
++            autogenerate.render_op_text(self.autogen_context, op_obj),
++            "op.create_table('test',"
++            "sa.Column('id', sa.Integer(), nullable=False, comment=''),"
++            "sa.PrimaryKeyConstraint('id'),"
++            "comment=''"
++            ")",
++        )
++
+     def test_render_table_with_info(self):
+         m = MetaData()
+         t = Table(
+@@ -2330,6 +2359,11 @@ class AutogenRenderTest(TestBase):
+             "nullable=True, comment='This is a Column'))",
+         )
+ 
++    def test_render_add_column_with_empty_comment(self):
++        op_obj = ops.AddColumnOp("foo", Column("x", Integer, comment=""))
++        rendered = autogenerate.render_op_text(self.autogen_context, op_obj)
++        assert rendered
++
+     def test_render_create_table_comment_op(self):
+         op_obj = ops.CreateTableCommentOp("table_name", "comment")
+         eq_ignore_whitespace(
+diff --git a/tests/test_mysql.py b/tests/test_mysql.py
+index ef0d3c6e..d9725c35 100644
+--- a/tests/test_mysql.py
++++ b/tests/test_mysql.py
+@@ -83,6 +83,11 @@ class MySQLOpTest(TestBase):
+             "ALTER TABLE t ADD COLUMN q INTEGER COMMENT 'This is a comment'"
+         )
+ 
++    def test_add_column_with_empty_comment(self):
++        context = op_fixture("mysql")
++        op.add_column("t", Column("q", Integer, comment=""))
++        context.assert_("ALTER TABLE t ADD COLUMN q INTEGER COMMENT ''")
++
+     def test_add_column_if_not_exists(self):
+         context = op_fixture("mysql")
+         op.add_column("t", Column("c", Integer), if_not_exists=True)
+diff --git a/tests/test_postgresql.py b/tests/test_postgresql.py
+index dd8bd028..4a1c4422 100644
+--- a/tests/test_postgresql.py
++++ b/tests/test_postgresql.py
+@@ -246,6 +246,14 @@ class PostgresqlOpTest(TestBase):
+             "COMMENT ON COLUMN t.q IS 'This is a comment'",
+         )
+ 
++    def test_add_column_with_empty_comment(self):
++        context = op_fixture("postgresql")
++        op.add_column("t", Column("q", Integer, comment=""))
++        context.assert_(
++            "ALTER TABLE t ADD COLUMN q INTEGER",
++            "COMMENT ON COLUMN t.q IS ''",
++        )
++
+     def test_alter_column_with_comment(self):
+         context = op_fixture("postgresql")
+         op.alter_column(
+@@ -347,6 +355,21 @@ class PostgresqlOpTest(TestBase):
+             "COMMENT ON COLUMN t2.c2 IS 'c2 comment'",
+         )
+ 
++    def test_create_table_with_empty_comments(self):
++        context = op_fixture("postgresql")
++        op.create_table(
++            "t2",
++            Column("c1", Integer, primary_key=True, comment=""),
++            Column("c2", Integer),
++            comment="",
++        )
++        context.assert_(
++            "CREATE TABLE t2 (c1 SERIAL NOT NULL, "
++            "c2 INTEGER, PRIMARY KEY (c1))",
++            "COMMENT ON TABLE t2 IS ''",
++            "COMMENT ON COLUMN t2.c1 IS ''",
++        )
++
+     def test_create_table_comment(self):
+         # this is handled by SQLAlchemy's compilers
+         context = op_fixture("postgresql")

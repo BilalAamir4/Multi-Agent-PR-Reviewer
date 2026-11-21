@@ -1,0 +1,102 @@
+{
+  "item_id": "item_007",
+  "repo": "alembic",
+  "upstream_commit": "7ed6e478e84956958fe1c6ee5c76f694bfb3b808",
+  "parent": "7b2af57eba318a712b7b4f79c7bc6b3669055636",
+  "pr_title": "Add autogenerate support for CHECK constraint detection",
+  "pr_body": "Autogenerate now detects the addition and removal of named CHECK\nconstraints, as part of the default autogenerate behavior. Detection is\nname-based only; a constraint whose name is unchanged is presumed\nequivalent regardless of its expression text, as reliably normalizing\nSQL expressions across backends for comparison purposes is not\ngenerally feasible. The dialect hook compare_check_constraint exists\nfor future per-dialect expression comparison.\n\nThis behavior is implemented as a built-in plugin named\nalembic.autogenerate.checkconstraint, part of the\nalembic.autogenerate.* wildcard and therefore active by default. It\nmay be disabled if not desired, for example if the name-only\ncomparison is producing unwanted false negatives, by excluding it from\nthe autogenerate_plugins list:\n\n    context.configure(\n        autogenerate_plugins=[\n            \"alembic.autogenerate.*\",\n            \"~alembic.autogenerate.checkconstraint\",\n        ]\n    )\n\nUnnamed constraints, type-bound constraints (Boolean/Enum), and\ndialects that do not support check constraint reflection are handled\ngracefully.\n\nFixes: #508\nCloses: #1811\nPull-request: https://github.com/sqlalchemy/alembic/pull/1811\nPull-request-sha: b0c36edd1ba11d31236e70b0a821e9a1c926275a\n\nChange-Id: Ie6e81335bfe432beaa44fbc83133dad8b8dfe14d",
+  "bucket": "large",
+  "py_files_changed": 12,
+  "lines_changed": 1214,
+  "sweep": false,
+  "plant_patch": "diff --git a/alembic/autogenerate/compare/check_constraints.py b/alembic/autogenerate/compare/check_constraints.py\nindex 89f577b4..c9e8b9ed 100644\n--- a/alembic/autogenerate/compare/check_constraints.py\n+++ b/alembic/autogenerate/compare/check_constraints.py\n@@ -51,7 +51,7 @@ def _compare_check_constraints(\n     conn_table: Optional[Table],\n     metadata_table: Optional[Table],\n ) -> PriorityDispatchResult:\n-    if conn_table is None or metadata_table is None:\n+    if metadata_table is None:\n         return PriorityDispatchResult.CONTINUE\n \n     inspector = autogen_context.inspector\n@@ -68,7 +68,7 @@ def _compare_check_constraints(\n         conn_ck_list = _InspectorConv(inspector).get_check_constraints(\n             tname, schema=schema\n         )\n-    except NotImplementedError:\n+    except KeyError:\n         return PriorityDispatchResult.CONTINUE\n \n     conn_ck_list = [\ndiff --git a/alembic/autogenerate/render.py b/alembic/autogenerate/render.py\nindex 4e7577ab..eb2f4740 100644\n--- a/alembic/autogenerate/render.py\n+++ b/alembic/autogenerate/render.py\n@@ -450,7 +450,7 @@ def _add_check_constraint(\n             constraint.sqltext, autogen_context, wrap_in_element=False\n         )\n     )\n-    if not autogen_context._has_batch and op.schema:\n+    if not autogen_context._has_batch:\n         args.append(\"schema=%r\" % _ident(op.schema))\n     return \"%(prefix)screate_check_constraint(%(args)s)\" % {\n         \"prefix\": _alembic_autogenerate_prefix(autogen_context),\n",
+  "tests_key": "35b88bacf9853aed167eadb5e72d97d67d3a46b65d3e9d578614031cf74b7bf5",
+  "tests_original": {
+    "passed": 1800,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 129,
+    "duration": 12.09,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1800 passed, 129 skipped in 12.09s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 8,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 0.94,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 8 passed in 0.94s",
+    "failing": [
+      "FAILED tests/test_autogen_check_constraints.py::AutogenCheckConstraintNoReflectionTest_sqlite+pysqlite_3_46_1::test_no_reflection_graceful_skip_add"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 15,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.95,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 15 passed in 0.95s",
+        "failing": [
+          "FAILED tests/test_autogen_check_constraints.py::AutogenCheckConstraintTest_sqlite+pysqlite_3_46_1::test_add_table_with_check_constraint_no_duplicate"
+        ]
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 8,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.92,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 8 passed in 0.92s",
+        "failing": [
+          "FAILED tests/test_autogen_check_constraints.py::AutogenCheckConstraintNoReflectionTest_sqlite+pysqlite_3_46_1::test_no_reflection_graceful_skip_add"
+        ]
+      }
+    },
+    "b3": {
+      "alone": {
+        "passed": 10,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.94,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 10 passed in 0.94s",
+        "failing": [
+          "FAILED tests/test_autogen_check_constraints.py::AutogenCheckConstraintRenderTest::test_render_add_check_constraint"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b3": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

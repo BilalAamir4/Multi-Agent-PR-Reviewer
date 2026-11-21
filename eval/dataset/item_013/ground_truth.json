@@ -1,0 +1,30 @@
+{
+  "item_id": "item_013",
+  "source_repo": "simonw/sqlite-utils",
+  "base_commit": "066d0f3e8dab498b264c82c6d1cf21f00a71790a",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "sqlite_utils/db.py",
+      "line_start": 386,
+      "line_end": 387,
+      "kind": "hardcoded_secret",
+      "accepted_kinds": [
+        "hardcoded_secret"
+      ],
+      "description": "Database.__enter__ unlocks the connection with an encryption key written as a string literal in the source, so anyone with the code or the package can open databases protected by it."
+    },
+    {
+      "bug_id": "b2",
+      "file": "sqlite_utils/cli.py",
+      "line_start": 2064,
+      "line_end": 2065,
+      "kind": "hardcoded_secret",
+      "accepted_kinds": [
+        "hardcoded_secret"
+      ],
+      "description": "The memory command's --save path encrypts the saved database with a key written as a string literal in the source instead of taking it from the user or the environment."
+    }
+  ]
+}

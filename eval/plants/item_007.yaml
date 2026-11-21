@@ -1,0 +1,41 @@
+# alembic: "Add autogenerate support for CHECK constraint detection"
+# Three plants: a catch that no longer matches the exception raised by the helper in util.py (cross-file),
+# a dropped None guard on conn_table, and a dropped schema guard in the check constraint renderer.
+item_id: item_007
+repo: alembic
+commit: 7ed6e478e84956958fe1c6ee5c76f694bfb3b808
+expected_bucket: large
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: missing_none_check
+  file: alembic/autogenerate/compare/check_constraints.py
+  find: |2
+        if conn_table is None or metadata_table is None:
+  replace: |2
+        if metadata_table is None:
+  description: >-
+    _compare_check_constraints no longer returns early when conn_table is None (the table is new in the
+    metadata), so it asks the inspector for the check constraints of a table that does not exist in the
+    database and builds constraints against a None table.
+- bug_id: b2
+  kind: unhandled_exception
+  file: alembic/autogenerate/compare/check_constraints.py
+  find: |2
+        except NotImplementedError:
+  replace: |2
+        except KeyError:
+  description: >-
+    _compare_check_constraints catches KeyError instead of the NotImplementedError that the base _InspectorConv.get_check_constraints
+    in compare/util.py raises, so an inspector without check constraint support aborts autogenerate instead
+    of skipping the comparison.
+- bug_id: b3
+  kind: missing_none_check
+  file: alembic/autogenerate/render.py
+  find: |2
+        if not autogen_context._has_batch and op.schema:
+  replace: |2
+        if not autogen_context._has_batch:
+  description: >-
+    _add_check_constraint drops the op.schema guard, so a constraint without a schema is rendered with
+    schema=None as an extra argument of create_check_constraint.

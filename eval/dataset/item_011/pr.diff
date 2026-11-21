@@ -1,0 +1,148 @@
+diff --git a/docs/changelog.rst b/docs/changelog.rst
+index fe215fd..b3203ad 100644
+--- a/docs/changelog.rst
++++ b/docs/changelog.rst
+@@ -25,6 +25,7 @@ Unreleased
+ - ``sqlite-utils convert --dry-run`` now works for table and column names containing closing square brackets. (:issue:`829`)
+ - ``table.indexes`` and ``table.xindexes`` now work for table, index and column names containing double quotes. This also fixes ``table.transform()`` for tables with those identifiers. Thanks, `nyxst4ck <https://github.com/nyxst4ck>`__. (:issue:`824`, `#825 <https://github.com/simonw/sqlite-utils/pull/825>`__)
+ - Improved type annotations throughout the package and added Pyright regression checks to CI. (:issue:`833`)
++- Changing a ``TEXT`` column to ``INTEGER``, ``FLOAT`` or ``REAL`` using ``table.transform()`` or ``sqlite-utils transform`` now converts exact empty strings to ``NULL``. Previously they remained empty strings in the numeric column. Thanks, `ikatyal2110 <https://github.com/ikatyal2110>`__. (:issue:`488`, `#805 <https://github.com/simonw/sqlite-utils/pull/805>`__)
+ 
+ .. _v3_39_1:
+ 
+diff --git a/docs/cli.rst b/docs/cli.rst
+index 417911a..78c33b8 100644
+--- a/docs/cli.rst
++++ b/docs/cli.rst
+@@ -2236,7 +2236,7 @@ The ``transform`` command allows you to apply complex transformations to a table
+ Every option for this table (with the exception of ``--pk-none``) can be specified multiple times. The options are as follows:
+ 
+ ``--type column-name new-type``
+-    Change the type of the specified column. Valid types are ``integer``, ``text``, ``float``, ``real``, ``blob`` and ``any``.
++    Change the type of the specified column. Valid types are ``integer``, ``text``, ``float``, ``real``, ``blob`` and ``any``. Changing a ``TEXT`` column to ``INTEGER``, ``FLOAT`` or ``REAL`` converts exact empty-string values to ``NULL``.
+ 
+ ``--drop column-name``
+     Drop the specified column.
+diff --git a/docs/python-api.rst b/docs/python-api.rst
+index 88cc3e3..d515642 100644
+--- a/docs/python-api.rst
++++ b/docs/python-api.rst
+@@ -1826,6 +1826,8 @@ To alter the type of a column, use the ``types=`` argument:
+     # Convert the 'age' column to an integer, and 'weight' to a float
+     table.transform(types={"age": int, "weight": float})
+ 
++When a ``TEXT`` column is changed to ``INTEGER``, ``FLOAT`` or ``REAL``, exact empty-string values are stored as ``NULL``. Other values, including whitespace-only strings, are copied normally.
++
+ See :ref:`python_api_add_column` for a list of available types.
+ 
+ .. _python_api_transform_strict:
+diff --git a/sqlite_utils/db.py b/sqlite_utils/db.py
+index 48987a6..84e2a87 100644
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -3093,6 +3093,19 @@ class Table(Queryable):
+             ).strip()
+         )
+ 
++        # Columns being changed from TEXT to a numeric type: coerce empty strings to NULL
++        _numeric_sql_types = {"INTEGER", "REAL", "FLOAT", "NUMERIC"}
++        text_to_numeric_cols = {
++            col_name
++            for col_name, new_type in types.items()
++            if existing_columns.get(col_name) == str
++            and COLUMN_TYPE_MAPPING.get(
++                new_type,
++                new_type.upper() if isinstance(new_type, str) else "",
++            )
++            in _numeric_sql_types
++        }
++
+         # Copy across data, respecting any renamed columns
+         new_cols = []
+         old_cols = []
+@@ -3103,10 +3116,16 @@ class Table(Queryable):
+         if "rowid" not in new_cols:
+             new_cols.insert(0, "rowid")
+             old_cols.insert(0, "rowid")
++
++        def _copy_expr(col):
++            if col in text_to_numeric_cols:
++                return "NULLIF({}, '')".format(col)
++            return quote_identifier(col)
++
+         copy_sql = "INSERT INTO {} ({new_cols})\n   SELECT {old_cols} FROM {};".format(
+             quote_identifier(new_table_name),
+             quote_identifier(self.name),
+-            old_cols=", ".join(quote_identifier(col) for col in old_cols),
++            old_cols=", ".join(_copy_expr(col) for col in old_cols),
+             new_cols=", ".join(quote_identifier(col) for col in new_cols),
+         )
+         sqls.append(copy_sql)
+diff --git a/tests/test_transform.py b/tests/test_transform.py
+index 3be6c6f..8738713 100644
+--- a/tests/test_transform.py
++++ b/tests/test_transform.py
+@@ -27,7 +27,7 @@ from sqlite_utils.utils import OperationalError
+             {"types": {"age": int}},
+             [
+                 'CREATE TABLE "dogs_new_suffix" (\n   "id" INTEGER PRIMARY KEY,\n   "name" TEXT,\n   "age" INTEGER\n);',
+-                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "age")\n   SELECT "rowid", "id", "name", "age" FROM "dogs";',
++                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "age")\n   SELECT "rowid", "id", "name", NULLIF("age", \'\') FROM "dogs";',
+                 'DROP TABLE "dogs";',
+                 "PRAGMA legacy_alter_table=ON;",
+                 'ALTER TABLE "dogs_new_suffix" RENAME TO "dogs";',
+@@ -63,7 +63,7 @@ from sqlite_utils.utils import OperationalError
+             {"types": {"age": int}, "rename": {"age": "dog_age"}},
+             [
+                 'CREATE TABLE "dogs_new_suffix" (\n   "id" INTEGER PRIMARY KEY,\n   "name" TEXT,\n   "dog_age" INTEGER\n);',
+-                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "dog_age")\n   SELECT "rowid", "id", "name", "age" FROM "dogs";',
++                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "dog_age")\n   SELECT "rowid", "id", "name", NULLIF("age", \'\') FROM "dogs";',
+                 'DROP TABLE "dogs";',
+                 "PRAGMA legacy_alter_table=ON;",
+                 'ALTER TABLE "dogs_new_suffix" RENAME TO "dogs";',
+@@ -168,7 +168,7 @@ def test_transform_sql_table_with_primary_key(
+             {"types": {"age": int}},
+             [
+                 'CREATE TABLE "dogs_new_suffix" (\n   "id" INTEGER,\n   "name" TEXT,\n   "age" INTEGER\n);',
+-                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "age")\n   SELECT "rowid", "id", "name", "age" FROM "dogs";',
++                'INSERT INTO "dogs_new_suffix" ("rowid", "id", "name", "age")\n   SELECT "rowid", "id", "name", NULLIF("age", \'\') FROM "dogs";',
+                 'DROP TABLE "dogs";',
+                 "PRAGMA legacy_alter_table=ON;",
+                 'ALTER TABLE "dogs_new_suffix" RENAME TO "dogs";',
+@@ -1125,6 +1125,36 @@ def test_transform_preserves_autoincrement_and_sequence(fresh_db):
+     ]
+ 
+ 
++@pytest.mark.parametrize(
++    "new_type,expected_value,expected_type",
++    [
++        (int, 42, int),
++        (float, 42.0, float),
++        ("integer", 42, int),
++        ("float", 42.0, float),
++        ("REAL", 42.0, float),
++    ],
++)
++def test_transform_empty_string_to_null_for_numeric_types(
++    fresh_db, new_type, expected_value, expected_type
++):
++    fresh_db["test"].insert_all(
++        [
++            {"id": 1, "value": "42"},
++            {"id": 2, "value": ""},
++            {"id": 3, "value": None},
++            {"id": 4, "value": " "},
++        ]
++    )
++    fresh_db["test"].transform(types={"value": new_type})
++    rows = {r["id"]: r["value"] for r in fresh_db["test"].rows}
++    assert rows[1] == expected_value
++    assert type(rows[1]) is expected_type
++    assert rows[2] is None
++    assert rows[3] is None
++    assert rows[4] == " "
++
++
+ def test_transform_preserves_view(fresh_db):
+     # https://github.com/simonw/sqlite-utils/issues/831
+     dogs = fresh_db.table("dogs")

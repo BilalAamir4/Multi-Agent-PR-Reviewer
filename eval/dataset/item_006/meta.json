@@ -1,0 +1,88 @@
+{
+  "item_id": "item_006",
+  "repo": "alembic",
+  "upstream_commit": "326e8fb37aa6bd85cfccad11919c3646e7677abe",
+  "parent": "1bc21b86dd6ddd07ac696e2d73b6cb200dd97bbd",
+  "pr_title": "Treat empty string comments as no comment in autogenerate",
+  "pr_body": "Fixed issue where a table or column comment set to an empty string\nwould cause autogenerate to detect a comment change on every run.\nPostgreSQL (COMMENT ON ... IS '' removes the comment), MySQL / MariaDB\nand Oracle don't store an empty string comment distinctly from no\ncomment, so the comment reflects back as None and the comparison can\nnever converge.  The table and column comment comparators now treat an\nempty string comment the same as None on all backends.\n\nAdditionally, create_table / add_column rendering,\nDefaultImpl.create_table, toimpl.add_column and the MySQL column spec\nused \"if comment:\", so an empty string comment was never emitted;\nthese now check \"is not None\".\n\nFixes: #1085\nCloses: #1871\nPull-request: https://github.com/sqlalchemy/alembic/pull/1871\nPull-request-sha: 5eacb86028259317cc20ee3af078514ec4008314\n\nChange-Id: Ic03ecb29412afabefaee2813bfa2be99637be6f3",
+  "bucket": "large",
+  "py_files_changed": 9,
+  "lines_changed": 231,
+  "sweep": false,
+  "plant_patch": "diff --git a/alembic/autogenerate/compare/comments.py b/alembic/autogenerate/compare/comments.py\nindex f070cf20..f031ed3c 100644\n--- a/alembic/autogenerate/compare/comments.py\n+++ b/alembic/autogenerate/compare/comments.py\n@@ -80,7 +80,7 @@ def _compare_table_comment(\n     if conn_comment is None and metadata_comment is None:\n         return PriorityDispatchResult.CONTINUE\n \n-    if metadata_comment is None and conn_comment is not None:\n+    if metadata_comment is None and conn_comment is None:\n         modify_table_ops.ops.append(\n             ops.DropTableCommentOp(\n                 tname, existing_comment=conn_comment, schema=schema\ndiff --git a/tests/test_autogen_render.py b/tests/test_autogen_render.py\nindex 1d42e4fe..783aa57c 100644\n--- a/tests/test_autogen_render.py\n+++ b/tests/test_autogen_render.py\n@@ -2361,11 +2361,8 @@ class AutogenRenderTest(TestBase):\n \n     def test_render_add_column_with_empty_comment(self):\n         op_obj = ops.AddColumnOp(\"foo\", Column(\"x\", Integer, comment=\"\"))\n-        eq_ignore_whitespace(\n-            autogenerate.render_op_text(self.autogen_context, op_obj),\n-            \"op.add_column('foo', sa.Column('x', sa.Integer(), \"\n-            \"nullable=True, comment=''))\",\n-        )\n+        rendered = autogenerate.render_op_text(self.autogen_context, op_obj)\n+        assert rendered\n \n     def test_render_create_table_comment_op(self):\n         op_obj = ops.CreateTableCommentOp(\"table_name\", \"comment\")\n",
+  "tests_key": "df711149337d06c4103ec4e8cfb9e0dbcecfd702b8187202792f584246664765",
+  "tests_original": {
+    "passed": 1934,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 130,
+    "duration": 9.3,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1934 passed, 130 skipped in 9.30s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1934,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 130,
+    "duration": 9.37,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1934 passed, 130 skipped in 9.37s",
+    "failing": []
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 1934,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 130,
+        "duration": 9.54,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1934 passed, 130 skipped in 9.54s",
+        "failing": []
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 1934,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 130,
+        "duration": 9.54,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1934 passed, 130 skipped in 9.54s",
+        "failing": []
+      },
+      "own_test": "tests/test_autogen_render.py::AutogenRenderTest::test_render_add_column_with_empty_comment",
+      "own_test_planted": {
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.05,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1 passed in 0.05s",
+        "failing": []
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}
