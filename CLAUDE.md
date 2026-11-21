@@ -15,6 +15,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
 - Dataset source repositories, images, eligible commits: `docs/decisions/0004-dataset-source-repos.md`.
 - Post-processing (D11 for every configuration), call limits, the stage 1 baseline:
   `docs/decisions/0007-single-agent-baseline.md`.
+- Specialists, shared agent machinery, composed prompts, `run_tests`, the `partial` status:
+  `docs/decisions/0008-specialists.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -48,7 +50,10 @@ uv run python -m eval.build_dataset --all     # build eval/dataset/ from eval/pl
 uv run python -m eval.build_dataset <item_id> [--rerun-tests]   # one item; reruns cached tests
 uv run python -m eval.check_dataset [item_id ...] [--no-tests]  # 12 checks per item (Docker)
 uv run reviewer review --workspace PATH --diff PATH [--title T] [--body-file P] [--out P] [--eval-mode]
+uv run reviewer review --agent bug_reviewer|security_reviewer|test_reviewer --workspace PATH --diff PATH `
+    [--focus TEXT] [--sandbox-repo NAME] ...   # default --agent single; exit 5 = partial (D2b)
 uv run reviewer review --item item_001 [--out PATH] [--eval-mode]   # exit 0/3 quota/4 limit/1 error
+docker build -t mapr-sandbox-dev_fixture:local sandbox_images/dev_fixture   # run_tests on dev fixtures
 uv run python -m eval.run --config single [--items ...] [--force] [--reason TEXT]  # eval + score
 ```
 
@@ -82,6 +87,9 @@ run the model checks in loops.
   (`aa94f1ae2cf6`) and `limits.single` in `config/review.yaml`.
 - Prompts never contain ground truth, `eval/plants/`, `meta.json` fields other than
   `pr_title`/`pr_body`, or any mention of planted bugs, evaluation or scoring.
+- **Specialists are not run on evaluation items before stage 5.** Develop them only on the dev
+  fixtures in `tests/fixtures/dev_*` (`tests/dev_pr.py`); the CLI refuses `--item` with a
+  specialist. `single.md` stays one frozen file; it never uses `prompts/common/`.
 - Do not add placeholder modules for later stages.
 
 ## Layout
@@ -93,12 +101,20 @@ run the model checks in loops.
   calls `task(chat_model, model_id)` and returns `RouterResult(value, model)`; also `classify`,
   `estimate_tokens`, `review_waits()`, `QuotaTracker` (`quota_state.json`). Decision 0006.
 - `src/reviewer/agents/output.py`: `FindingDraft`, `ReviewOutput`, `to_findings` (schema,
-  not_in_diff, evidence, duplicate; every agent). `src/reviewer/agents/single.py`:
-  `review(ctx, title, body, router) -> ReviewResult` (create_agent + ToolStrategy + call-limit
-  middleware). `src/reviewer/prompts/single.md`: the system prompt. `src/reviewer/cli.py`.
-- `src/reviewer/tools/`: `ReviewContext.from_paths(workspace, diff_path)`, then
+  not_in_diff, evidence, duplicate; every agent). `src/reviewer/agents/base.py`: `AgentSpec`,
+  `run_agent(spec, ctx, user_message, router, *, item_id, evaluation) -> ReviewResult`
+  (create_agent + ToolStrategy + call-limit middleware), `compose_prompt`, `ReviewResult`
+  (`agent`, `notes`, status `partial`). `src/reviewer/agents/single.py`:
+  `review(ctx, title, body, router)` on `base`. `src/reviewer/agents/specialists.py`:
+  `specialist_spec`, `run_specialist(name, ctx, *, pr_title, pr_body, focus, router, ...)`,
+  `run_security_review(request: dict) -> dict` (stage 3). `src/reviewer/prompts/`: `single.md`
+  (frozen), `<specialist>.md` with `<!-- include: NAME -->` lines for `common/NAME.md`.
+  `src/reviewer/cli.py`.
+- `src/reviewer/tools/`: `ReviewContext.from_paths(workspace, diff_path, sandbox=None)`, then
   `make_tools(ctx)` gives `list_changed_files`, `read_diff`, `read_file`, `search_code`,
-  `run_ruff`, `run_bandit` (read-only, strings, `ERROR: ...` on failure; needs `rg` on PATH).
+  `run_ruff`, `run_bandit` (read-only, strings, `ERROR: ...` on failure; needs `rg` on PATH);
+  `make_tools(ctx, names, notes)` can add `run_tests` (`tools/testing.py`: pytest through
+  `run_in_sandbox` with a `SandboxSpec`, at most `limits.<agent>.max_run_tests_calls` calls).
 - `scripts/`: stage 0B environment checks; `scripts/langgraph_check/`: echo graph for `langgraph dev`.
 - `eval/ground_truth.py`: dataset item format. `eval/equivalences.yaml`: D8a groups.
   `eval/score.py`: the matching rule and scorer CLI. `eval/run.py`: runs a configuration in
@@ -113,6 +129,11 @@ run the model checks in loops.
   tagging), `eval/check_repos.py` (baseline). `eval/candidates/<name>.json`: commit index and
   baseline. `sandbox_images/<name>/`: `Dockerfile` (installs `requirements.lock`),
   `bootstrap.Dockerfile` (how the lock was made). `eval/repos/` (clones) is gitignored.
+  `dev_fixture` in `repos.yaml` is the local image for the dev fixtures (`url: null`, only names
+  in `LOCAL_REPOS`); `eval.repos.sandbox_spec(name)`, `item_sandbox(item_id)`,
+  `dataset_repos()`.
+- `tests/fixtures/dev_{pr,security_pr,tests_pr,docs_pr,risky_pr}/`: synthetic dev fixtures
+  (`workspace/`, `pr.diff`, informational `expected.json`).
 
 ## Stage status
 
@@ -126,7 +147,8 @@ run the model checks in loops.
 | 1A Model router and review tools, dataset fixes | done (decisions 0005, 0006) |
 | 1B One agent, CLI, evaluation runner, baseline | done (decision 0007) |
 | **Stage 1** | **complete** |
-| 2 Calling specialists | not started |
+| 2A Shared agent machinery, `run_tests`, three specialists | done (decision 0008) |
+| 2B Orchestrator calling the specialists, routing test | not started |
 | 3 A2A | not started |
 | 4 Spawning workers | not started |
 | 5 Evaluation | not started |

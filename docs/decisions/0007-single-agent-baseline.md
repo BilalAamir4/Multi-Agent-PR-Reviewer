@@ -111,6 +111,10 @@ the first attempt. **No item was re-run.**
 - Mean tokens per review: 107,027 input, 412 output; estimated $0.02738 per review at the D5
   price estimate ($0.25 / $1.50 per million tokens; run on the free tier).
 - Dropped by post-processing: none.
+- Disclosure (added in stage 2A): before the baseline run, `eval/dataset/item_001/meta.json`
+  (which includes the plant patch) was opened while the prompt was being written; nothing from
+  it entered the prompt, and the prompt's category definitions are the pre-written ones from
+  `docs/categories.md`.
 
 Full tables: `eval/results/single/summary.md`; per-item results and run logs:
 `eval/results/single/runs/`.

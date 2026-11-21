@@ -17,19 +17,34 @@ class SpawnConfig(BaseModel):
 
 
 class AgentLimits(BaseModel):
-    """Call limits for one agent (plan § Production concerns). Reaching one ends the review
-    cleanly with status ``limit_reached`` (decision 0007)."""
+    """Call limits for one agent (plan § Production concerns). Reaching ``max_model_calls`` or
+    ``max_tool_calls`` ends the review cleanly with status ``limit_reached`` (decision 0007).
+    ``max_run_tests_calls`` caps ``run_tests`` separately; past it the tool is refused and the
+    review goes on (decision 0008). It is set only for agents that have ``run_tests``."""
 
     model_config = ConfigDict(extra="forbid")
 
     max_model_calls: PositiveInt
     max_tool_calls: PositiveInt
+    max_run_tests_calls: PositiveInt | None = None
 
 
 class LimitsConfig(BaseModel):
+    """``limits.<agent name>``: the stage 1 single agent and the stage 2 specialists."""
+
     model_config = ConfigDict(extra="forbid")
 
     single: AgentLimits
+    bug_reviewer: AgentLimits
+    security_reviewer: AgentLimits
+    test_reviewer: AgentLimits
+
+    def for_agent(self, name: str) -> AgentLimits:
+        if name not in type(self).model_fields:
+            raise KeyError(
+                f"no limits for agent {name!r}; known: {sorted(type(self).model_fields)}"
+            )
+        return getattr(self, name)
 
 
 class ReviewConfig(BaseModel):

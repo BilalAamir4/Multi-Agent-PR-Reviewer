@@ -1,0 +1,33 @@
+{
+  "note": "Synthetic development fixture (stage 2A). Not part of the evaluation dataset. Informational only: no test asserts that a defect is found. SQL, a credential, logic and tests in one change, for the stage 2B routing test.",
+  "defects": [
+    {
+      "file": "ledger/store.py",
+      "line_start": 24,
+      "line_end": 24,
+      "kind": "sql_injection",
+      "description": "entries_for() formats account into the SQL text."
+    },
+    {
+      "file": "ledger/store.py",
+      "line_start": 6,
+      "line_end": 6,
+      "kind": "hardcoded_secret",
+      "description": "The sync password is a literal in the code."
+    },
+    {
+      "file": "ledger/report.py",
+      "line_start": 11,
+      "line_end": 11,
+      "kind": "off_by_one",
+      "description": "running_balances() starts at 1, so the balance after the first amount is missing."
+    },
+    {
+      "file": "tests/test_report.py",
+      "line_start": 5,
+      "line_end": 5,
+      "kind": "ineffective_test",
+      "description": "test_total only checks the total is not negative."
+    }
+  ]
+}

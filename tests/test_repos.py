@@ -7,7 +7,8 @@ import yaml
 from pydantic import ValidationError
 
 from eval.check_repos import parse_pytest_summary
-from eval.repos import REPOS_YAML, load_repos, parse_ls_tree
+from eval.repos import REPOS_YAML, dataset_repos, load_repos, parse_ls_tree, sandbox_spec
+from reviewer.tools import SandboxSpec
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 
@@ -35,7 +36,8 @@ def write(tmp_path: Path, data: dict) -> Path:
 
 def test_real_file_loads():
     repos = load_repos(REPOS_YAML)
-    assert set(repos) == {"sqlite-utils", "alembic", "click", "marshmallow"}
+    assert set(repos) == {"sqlite-utils", "alembic", "click", "marshmallow", "dev_fixture"}
+    assert dataset_repos() == ["sqlite-utils", "alembic", "click", "marshmallow"]
     assert repos["sqlite-utils"].slug == "simonw/sqlite-utils"
     for name in ("sqlite-utils", "alembic"):
         assert set(repos[name].recommended_plants) == {"sql_injection", "hardcoded_secret"}
@@ -76,6 +78,62 @@ def test_image_tag_must_match_name_and_commit(tmp_path):
 def test_invalid_values_rejected(tmp_path, override):
     with pytest.raises(ValidationError):
         load_repos(write(tmp_path, {"repos": {"demo": spec(**override)}}))
+
+
+def local(**overrides) -> dict:
+    data = spec(
+        url=None,
+        license="n/a",
+        default_branch=None,
+        image_commit=None,
+        image="mapr-sandbox-dev_fixture:local",
+    )
+    data.update(overrides)
+    return data
+
+
+def test_real_dev_fixture_entry():
+    dev = load_repos(REPOS_YAML)["dev_fixture"]
+    assert dev.is_local and dev.slug is None and dev.license == "n/a"
+    assert sandbox_spec("dev_fixture") == SandboxSpec(
+        image="mapr-sandbox-dev_fixture:local",
+        test_command=("python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-x"),
+        pythonpath=(".",),
+        timeout_s=60,
+    )
+
+
+def test_local_image_allowed_for_dev_fixture(tmp_path):
+    repos = load_repos(write(tmp_path, {"repos": {"dev_fixture": local()}}))
+    assert repos["dev_fixture"].url is None
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"url": None},
+        {"license": "n/a"},
+        {"image_commit": None},
+        {"default_branch": None},
+    ],
+)
+def test_local_fields_only_for_local_names(tmp_path, override):
+    with pytest.raises(ValidationError, match="only for the local images"):
+        load_repos(write(tmp_path, {"repos": {"demo": spec(**override)}}))
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"url": "https://github.com/owner/demo.git"},
+        {"license": "MIT"},
+        {"image_commit": SHA},
+        {"image": "mapr-sandbox-dev_fixture:latest"},
+    ],
+)
+def test_local_entry_must_be_fully_local(tmp_path, override):
+    with pytest.raises(ValidationError):
+        load_repos(write(tmp_path, {"repos": {"dev_fixture": local(**override)}}))
 
 
 def test_parse_ls_tree():

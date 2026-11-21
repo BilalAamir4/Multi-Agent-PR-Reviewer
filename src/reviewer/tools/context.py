@@ -75,25 +75,45 @@ def _changed_file(pf: PatchedFile) -> ChangedFile:
 
 
 @dataclass(frozen=True)
+class SandboxSpec:
+    """How ``run_tests`` runs a repository's tests in its sandbox image (D2, decision 0008).
+
+    ``pythonpath`` is what the image already puts on ``PYTHONPATH`` (it is recorded, not passed
+    to the container). ``timeout_s`` is the container-level limit per ``run_tests`` call."""
+
+    image: str
+    test_command: tuple[str, ...]
+    pythonpath: tuple[str, ...]
+    timeout_s: int
+
+
+@dataclass(frozen=True)
 class ReviewContext:
-    """What every tool works on: the checkout after the PR and the PR's unified diff."""
+    """What every tool works on: the checkout after the PR, the PR's unified diff and, for
+    ``run_tests``, an optional test sandbox."""
 
     workspace: Path  # absolute, resolved
     diff_text: str
     files: tuple[ChangedFile, ...]
+    sandbox: SandboxSpec | None = None
 
     @classmethod
-    def from_text(cls, workspace: Path, diff_text: str) -> ReviewContext:
+    def from_text(
+        cls, workspace: Path, diff_text: str, sandbox: SandboxSpec | None = None
+    ) -> ReviewContext:
         workspace = Path(workspace).resolve()
         if not workspace.is_dir():
             raise ToolError(f"workspace {workspace} is not a directory")
         files = tuple(_changed_file(pf) for pf in parse_patch(diff_text))
-        return cls(workspace=workspace, diff_text=diff_text, files=files)
+        return cls(workspace=workspace, diff_text=diff_text, files=files, sandbox=sandbox)
 
     @classmethod
-    def from_paths(cls, workspace: Path, diff_path: Path) -> ReviewContext:
+    def from_paths(
+        cls, workspace: Path, diff_path: Path, sandbox: SandboxSpec | None = None
+    ) -> ReviewContext:
         """Read ``diff_path`` as bytes and decode it as UTF-8 (no newline translation)."""
-        return cls.from_text(workspace, Path(diff_path).read_bytes().decode("utf-8"))
+        text = Path(diff_path).read_bytes().decode("utf-8")
+        return cls.from_text(workspace, text, sandbox)
 
 
 def changed_files(ctx: ReviewContext) -> list[ChangedFile]:

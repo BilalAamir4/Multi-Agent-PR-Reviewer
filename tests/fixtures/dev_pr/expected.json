@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic development fixture (stage 1B). Not part of the evaluation dataset.",
+  "note": "Synthetic development fixture (stage 1B, extended in stage 2A with tests/test_catalog.py). Not part of the evaluation dataset. Informational only.",
   "defects": [
     {
       "file": "shop/catalog.py",
@@ -15,5 +15,8 @@
       "kind": "missing_none_check",
       "description": "apply_coupon() reads coupon.percent although find() returns None for an unknown code."
     }
+  ],
+  "tests_that_fail_on_the_pr": [
+    "tests/test_catalog.py::test_page_sizes"
   ]
 }

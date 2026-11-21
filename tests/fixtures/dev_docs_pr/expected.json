@@ -1,0 +1,4 @@
+{
+  "note": "Synthetic development fixture (stage 2A). Not part of the evaluation dataset. Informational only: no test asserts that a defect is found. Docs-only change for the stage 2B routing test.",
+  "defects": []
+}

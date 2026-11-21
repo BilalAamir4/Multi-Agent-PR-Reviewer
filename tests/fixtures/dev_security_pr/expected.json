@@ -1,0 +1,19 @@
+{
+  "note": "Synthetic development fixture (stage 2A). Not part of the evaluation dataset. Informational only: no test asserts that a defect is found.",
+  "defects": [
+    {
+      "file": "vault/db.py",
+      "line_start": 30,
+      "line_end": 30,
+      "kind": "sql_injection",
+      "description": "search_users() formats term and order_by into the SQL text; both come from request parameters."
+    },
+    {
+      "file": "vault/admin.py",
+      "line_start": 6,
+      "line_end": 6,
+      "kind": "hardcoded_secret",
+      "description": "The admin password is a literal in the code instead of configuration."
+    }
+  ]
+}

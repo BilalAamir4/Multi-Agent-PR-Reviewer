@@ -67,3 +67,15 @@ repos:
     test_timeout_s: 120
     # older tests import pytz, which is not a dependency at image_commit (decision 0004)
     eligible_since: 2024-10-09
+  # Not a dataset repository: the local image for the synthetic dev fixtures in tests/fixtures/
+  # (stage 2A, decision 0008). url, image_commit and default_branch are null and the license is
+  # n/a; eval/repos.py allows that only for the names in LOCAL_REPOS.
+  dev_fixture:
+    url: null
+    license: n/a
+    default_branch: null
+    image_commit: null
+    image: mapr-sandbox-dev_fixture:local
+    pythonpath: [.]
+    test_command: [python, -m, pytest, -q, -p, no:cacheprovider, -x]
+    test_timeout_s: 60

@@ -1,0 +1,22 @@
+{
+  "note": "Synthetic development fixture (stage 2A). Not part of the evaluation dataset. Informational only: no test asserts that a defect is found.",
+  "defects": [
+    {
+      "file": "tests/test_summary.py",
+      "line_start": 11,
+      "line_end": 14,
+      "kind": "ineffective_test",
+      "description": "test_mean_empty now swallows the ValueError and passes even if mean([]) raises nothing."
+    },
+    {
+      "file": "stats/summary.py",
+      "line_start": 26,
+      "line_end": 27,
+      "kind": "wrong_comparison",
+      "description": "_limit() compares value with low instead of high, so every value above low becomes high; the existing test_clamp fails."
+    }
+  ],
+  "tests_that_fail_on_the_pr": [
+    "tests/test_summary.py::test_clamp"
+  ]
+}

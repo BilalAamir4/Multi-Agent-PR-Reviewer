@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 
 from eval.find_candidates import BUCKETS, bucket_counts, candidates_path
-from eval.repos import RepoSpec, get_repo, load_repos, run_repo_tests, take_snapshot
+from eval.repos import RepoSpec, dataset_repos, get_repo, run_repo_tests, take_snapshot
 from reviewer.sandbox import SandboxResult
 
 RUNS = 3
@@ -210,7 +210,11 @@ def narrow(name: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Baseline sandboxed test runs per repository.")
-    parser.add_argument("names", nargs="*", help="repositories (default: all in eval/repos.yaml)")
+    parser.add_argument(
+        "names",
+        nargs="*",
+        help="repositories (default: every dataset repository in eval/repos.yaml)",
+    )
     parser.add_argument("--runs", type=int, default=RUNS)
     parser.add_argument(
         "--narrow",
@@ -218,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         help="only propose eligible_since: binary-search for the oldest passing commit",
     )
     args = parser.parse_args(argv)
-    names = args.names or list(load_repos())
+    names = args.names or dataset_repos()
     if args.narrow:
         found = {name: narrow(name) for name in names}
         print("proposed eligible_since:", found)

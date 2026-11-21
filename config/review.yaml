@@ -2,9 +2,21 @@
 spawn:
   min_py_files: 4
   max_specialist_prompt_tokens: 30000
-# Per-agent limits. Reaching one ends the review cleanly as limit_reached (decision 0007).
+# Per-agent limits. Reaching max_model_calls or max_tool_calls ends the review cleanly as
+# limit_reached (decision 0007). max_run_tests_calls caps run_tests on its own; past it the tool
+# is refused and the review goes on (decision 0008).
 # limits.single is frozen for the "One agent" row from the stage 1B baseline on.
 limits:
   single:
     max_model_calls: 25
     max_tool_calls: 40
+  bug_reviewer:
+    max_model_calls: 20
+    max_tool_calls: 30
+  security_reviewer:
+    max_model_calls: 15
+    max_tool_calls: 25
+  test_reviewer:
+    max_model_calls: 20
+    max_tool_calls: 30
+    max_run_tests_calls: 3

@@ -8,12 +8,25 @@ strings instead of raising.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from langchain_core.tools import BaseTool, StructuredTool
 
-from reviewer.tools import files, linters, search
+from reviewer.tools import files, linters, search, testing
 from reviewer.tools.context import ReviewContext, ToolError, limit_output, numbered_diff
+from reviewer.tools.testing import ToolNotes
+
+# The six stage 1A tools, in the order make_tools() returns them, then the stage 2A extra.
+REVIEW_TOOLS = (
+    "list_changed_files",
+    "read_diff",
+    "read_file",
+    "search_code",
+    "run_ruff",
+    "run_bandit",
+)
+EXTRA_TOOLS = ("run_tests",)
+ALL_TOOLS = REVIEW_TOOLS + EXTRA_TOOLS
 
 
 def _guard(fn: Callable[[], str]) -> str:
@@ -63,9 +76,26 @@ def run_bandit(ctx: ReviewContext, paths: list[str] | None = None) -> str:
     return _guard(lambda: linters.run_bandit(ctx, paths))
 
 
-def make_tools(ctx: ReviewContext) -> list[BaseTool]:
-    """The six review tools bound to ``ctx``. Their names and docstrings are what the model
-    reads."""
+def run_tests(
+    ctx: ReviewContext, test_ids: list[str] | None = None, notes: ToolNotes | None = None
+) -> str:
+    return _guard(lambda: testing.run_tests(ctx, test_ids, notes))
+
+
+def make_tools(
+    ctx: ReviewContext,
+    names: Sequence[str] | None = None,
+    notes: ToolNotes | None = None,
+) -> list[BaseTool]:
+    """Review tools bound to ``ctx``: the six stage 1A tools when ``names`` is None, otherwise
+    the named ones (from ``ALL_TOOLS``) in ``ALL_TOOLS`` order. ``notes`` collects what
+    ``run_tests`` reports back to the agent's result (D2b). Their names and docstrings are what
+    the model reads."""
+    wanted = list(REVIEW_TOOLS) if names is None else list(names)
+    unknown = sorted(set(wanted) - set(ALL_TOOLS))
+    if unknown:
+        raise ValueError(f"unknown tools {unknown}; known: {list(ALL_TOOLS)}")
+    notes = notes if notes is not None else ToolNotes()
 
     def list_changed_files_tool() -> str:
         """List the files this pull request changes, one per line: status (added, modified,
@@ -145,6 +175,29 @@ def make_tools(ctx: ReviewContext) -> list[BaseTool]:
         """
         return run_bandit(ctx, paths)
 
+    def run_tests_tool(test_ids: list[str] | None = None) -> str:
+        """Run the repository's pytest tests on the code as it is after the pull request.
+
+        The tests run isolated, in a throwaway container with no network, on a copy of the
+        repository; only pytest runs there. Failing tests are not stopped early.
+
+        Args:
+            test_ids: Tests to run, as pytest node IDs or paths from the repository root, for
+                example ["tests/test_cart.py", "tests/test_cart.py::test_total"]. Find them in
+                the diff or with search_code (for example the pattern "def test_" with the glob
+                "tests/**"). Choose the tests of the changed code and the changed tests. Leave
+                empty to run the whole suite, which can be slow. IDs that start with "-" or
+                contain spaces, "..", or backslashes are refused, and each path must exist.
+
+        Returns the pytest summary line (for example "1 failed, 3 passed in 0.20s"), the IDs of
+        the failed and errored tests, and their short tracebacks; output over 12,000 characters
+        is cut. A test that fails on the pull request is evidence of a defect.
+
+        You can call this tool at most 3 times in a review, so put every test you need in as
+        few calls as you can.
+        """
+        return run_tests(ctx, test_ids, notes)
+
     specs = [
         ("list_changed_files", list_changed_files_tool),
         ("read_diff", read_diff_tool),
@@ -152,8 +205,10 @@ def make_tools(ctx: ReviewContext) -> list[BaseTool]:
         ("search_code", search_code_tool),
         ("run_ruff", run_ruff_tool),
         ("run_bandit", run_bandit_tool),
+        ("run_tests", run_tests_tool),
     ]
     return [
         StructuredTool.from_function(func=fn, name=name, description=inspect.getdoc(fn))
         for name, fn in specs
+        if name in wanted
     ]

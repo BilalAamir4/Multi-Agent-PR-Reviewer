@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 from reviewer.config import repo_root
 from reviewer.sandbox import SandboxResult, run_in_sandbox
 from reviewer.schemas import Category
+from reviewer.tools.context import SandboxSpec
 
 log = logging.getLogger(__name__)
 
@@ -33,14 +34,21 @@ _SHA = r"^[0-9a-f]{40}$"
 _URL = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)\.git$")
 
 
+# Local sandbox images with no upstream repository: ``url: null``, ``license: n/a``,
+# ``image_commit: null`` and the image ``mapr-sandbox-<name>:local`` are allowed only for these
+# names (stage 2A: the synthetic dev fixtures' image, decision 0008).
+LOCAL_REPOS = frozenset({"dev_fixture"})
+
+
 class RepoSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    url: str = Field(pattern=_URL.pattern)
-    license: License
-    default_branch: str
-    image_commit: str = Field(pattern=_SHA)  # the commit whose dependencies the image installs
-    image: str  # mapr-sandbox-<name>:<first 12 chars of image_commit>
+    url: str | None = Field(pattern=_URL.pattern)  # None only for LOCAL_REPOS
+    license: License | Literal["n/a"]  # "n/a" only for LOCAL_REPOS
+    default_branch: str | None  # None only for LOCAL_REPOS
+    # the commit whose dependencies the image installs; None only for LOCAL_REPOS
+    image_commit: str | None = Field(pattern=_SHA)
+    image: str  # mapr-sandbox-<name>:<first 12 chars of image_commit> (or :local)
     pythonpath: list[str]  # paths under /work added to PYTHONPATH in the image
     test_command: list[str] = Field(min_length=1)
     test_timeout_s: PositiveInt
@@ -51,8 +59,14 @@ class RepoSpec(BaseModel):
     eligible_since: date | None = None
 
     @property
-    def slug(self) -> str:
-        """``owner/name``, as in ``GroundTruth.source_repo``."""
+    def is_local(self) -> bool:
+        return self.url is None
+
+    @property
+    def slug(self) -> str | None:
+        """``owner/name``, as in ``GroundTruth.source_repo``; None for a local image."""
+        if self.url is None:
+            return None
         m = _URL.match(self.url)
         assert m is not None
         return f"{m.group(1)}/{m.group(2)}"
@@ -66,7 +80,27 @@ class ReposFile(BaseModel):
     @model_validator(mode="after")
     def _check_images(self) -> Self:
         for name, spec in self.repos.items():
-            expected = f"mapr-sandbox-{name}:{spec.image_commit[:12]}"
+            local = (
+                spec.url is None,
+                spec.license == "n/a",
+                spec.image_commit is None,
+                spec.default_branch is None,
+            )
+            if any(local):
+                if name not in LOCAL_REPOS:
+                    raise ValueError(
+                        f"{name}: url, license n/a, image_commit and default_branch may be "
+                        f"null only for the local images {sorted(LOCAL_REPOS)}"
+                    )
+                if not all(local):
+                    raise ValueError(
+                        f"{name}: a local image needs url, image_commit and default_branch null "
+                        "and license n/a"
+                    )
+                expected = f"mapr-sandbox-{name}:local"
+            else:
+                assert spec.image_commit is not None
+                expected = f"mapr-sandbox-{name}:{spec.image_commit[:12]}"
             if spec.image != expected:
                 raise ValueError(f"{name}: image must be {expected!r}, got {spec.image!r}")
             if "other" in spec.recommended_plants:
@@ -82,6 +116,11 @@ def load_repos(path: Path = REPOS_YAML) -> dict[str, RepoSpec]:
 @cache
 def _default_repos() -> dict[str, RepoSpec]:
     return load_repos()
+
+
+def dataset_repos() -> list[str]:
+    """Names of the dataset source repositories (every entry but the local images)."""
+    return [name for name, spec in _default_repos().items() if not spec.is_local]
 
 
 def get_repo(name: str) -> RepoSpec:
@@ -107,6 +146,8 @@ def ensure_clone(name: str) -> Path:
     paths are not valid on Windows.
     """
     spec = get_repo(name)
+    if spec.url is None:
+        raise ValueError(f"{name} is a local image with no repository to clone")
     path = clone_dir(name)
     if not (path / ".git").exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -178,6 +219,17 @@ def snapshot_files(name: str, commit: str) -> dict[str, bytes]:
     for path, reason in snap.skipped:
         log.warning("%s@%s: skipped %s (%s)", name, commit[:12], path, reason)
     return snap.files
+
+
+def sandbox_spec(name: str) -> SandboxSpec:
+    """The ``run_tests`` sandbox for the ``eval/repos.yaml`` entry ``name`` (stage 2A)."""
+    spec = get_repo(name)
+    return SandboxSpec(
+        image=spec.image,
+        test_command=tuple(spec.test_command),
+        pythonpath=tuple(spec.pythonpath),
+        timeout_s=spec.test_timeout_s,
+    )
 
 
 def run_repo_tests(name: str, files: dict[str, bytes]) -> SandboxResult:
@@ -256,7 +308,7 @@ def apply_diff(worktree: Path, diff: bytes, *, check_only: bool = False) -> None
 def repo_name_for_slug(slug: str) -> str:
     """The ``eval/repos.yaml`` key whose URL is ``owner/name`` == ``slug``."""
     for name, spec in _default_repos().items():
-        if spec.slug == slug:
+        if spec.slug is not None and spec.slug == slug:
             return name
     raise KeyError(f"no repository in {REPOS_YAML.name} for {slug!r}")
 
@@ -305,6 +357,12 @@ def diff_file_changes(diff_text: str) -> tuple[set[str], set[str]]:
         if not pf.is_added_file and source != pf.path:
             removed.add(str(PurePosixPath(source)))
     return written, removed - written
+
+
+def item_sandbox(item_id: str) -> SandboxSpec:
+    """The ``run_tests`` sandbox of a dataset item: its source repository's entry."""
+    gt, _ = _load_item(item_id)
+    return sandbox_spec(repo_name_for_slug(gt.source_repo))
 
 
 def item_files(item_id: str) -> dict[str, bytes]:

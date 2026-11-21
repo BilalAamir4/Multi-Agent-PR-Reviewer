@@ -1,0 +1,67 @@
+diff --git a/tests/test_db.py b/tests/test_db.py
+index 3ee1181..a9515e5 100644
+--- a/tests/test_db.py
++++ b/tests/test_db.py
+@@ -15,3 +15,8 @@ def test_find_user():
+ 
+ def test_find_missing_user():
+     assert db.find_user(make_db(), "linus") is None
++
++
++def test_search_users():
++    names = [row[1] for row in db.search_users(make_db(), "a")]
++    assert names == ["ada", "grace"]
+diff --git a/vault/admin.py b/vault/admin.py
+new file mode 100644
+index 0000000..9e4a004
+--- /dev/null
++++ b/vault/admin.py
+@@ -0,0 +1,11 @@
++"""Login for the admin console."""
++
++import hmac
++
++ADMIN_USER = "admin"
++ADMIN_PASSWORD = "Winter-Harbor-2026"
++
++
++def check_login(user, password):
++    """True if ``user`` and ``password`` are the admin's."""
++    return user == ADMIN_USER and hmac.compare_digest(password, ADMIN_PASSWORD)
+diff --git a/vault/db.py b/vault/db.py
+index 2248027..6442257 100644
+--- a/vault/db.py
++++ b/vault/db.py
+@@ -23,3 +23,9 @@ def find_user(conn, name):
+     return conn.execute(
+         "SELECT id, name, email FROM users WHERE name = ?", (name,)
+     ).fetchone()
++
++
++def search_users(conn, term, order_by="name"):
++    """Users whose name contains ``term``, sorted by the column ``order_by``."""
++    query = f"SELECT id, name, email FROM users WHERE name LIKE '%{term}%' ORDER BY {order_by}"
++    return conn.execute(query).fetchall()
+diff --git a/vault/web.py b/vault/web.py
+index e3fb71c..711b48e 100644
+--- a/vault/web.py
++++ b/vault/web.py
+@@ -1,8 +1,17 @@
+ """Request handlers for the user directory."""
+ 
+-from vault import db
++from vault import admin, db
+ 
+ 
+ def handle_lookup(conn, params):
+     user = db.find_user(conn, params["name"])
+     return {"found": user is not None}
++
++
++def handle_search(conn, params):
++    rows = db.search_users(conn, params.get("q", ""), params.get("sort", "name"))
++    return {"users": [{"id": r[0], "name": r[1]} for r in rows]}
++
++
++def handle_admin_login(params):
++    return {"ok": admin.check_login(params.get("user", ""), params.get("password", ""))}

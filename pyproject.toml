@@ -45,8 +45,8 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# The dev fixture is data with fixed line numbers; formatting it would move them.
-extend-exclude = ["tests/fixtures/dev_pr"]
+# The dev fixtures are data with fixed line numbers; formatting them would move them.
+extend-exclude = ["tests/fixtures/dev_*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

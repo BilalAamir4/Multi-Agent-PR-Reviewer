@@ -12,7 +12,14 @@ from reviewer.config import (
 )
 
 SPAWN = "spawn:\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\n"
-LIMITS = "limits:\n  single:\n    max_model_calls: 25\n    max_tool_calls: 40\n"
+LIMITS = (
+    "limits:\n"
+    "  single:\n    max_model_calls: 25\n    max_tool_calls: 40\n"
+    "  bug_reviewer:\n    max_model_calls: 20\n    max_tool_calls: 30\n"
+    "  security_reviewer:\n    max_model_calls: 15\n    max_tool_calls: 25\n"
+    "  test_reviewer:\n    max_model_calls: 20\n    max_tool_calls: 30\n"
+    "    max_run_tests_calls: 3\n"
+)
 
 
 def _review_yaml(tmp_path: Path, text: str) -> Path:
@@ -27,6 +34,12 @@ def test_real_file_loads():
     assert cfg.spawn.max_specialist_prompt_tokens == 30000
     assert cfg.limits.single.max_model_calls == 25
     assert cfg.limits.single.max_tool_calls == 40
+    assert cfg.limits.single.max_run_tests_calls is None
+    assert cfg.limits.bug_reviewer == AgentLimits(max_model_calls=20, max_tool_calls=30)
+    assert cfg.limits.security_reviewer == AgentLimits(max_model_calls=15, max_tool_calls=25)
+    assert cfg.limits.test_reviewer == AgentLimits(
+        max_model_calls=20, max_tool_calls=30, max_run_tests_calls=3
+    )
 
 
 def test_default_path_is_independent_of_cwd(tmp_path, monkeypatch):
@@ -83,3 +96,22 @@ def test_non_positive_limits_rejected(bad):
         AgentLimits(max_model_calls=bad, max_tool_calls=40)
     with pytest.raises(ValidationError):
         AgentLimits(max_model_calls=25, max_tool_calls=bad)
+
+
+def test_for_agent():
+    limits = load_review_config().limits
+    assert limits.for_agent("single") is limits.single
+    assert limits.for_agent("test_reviewer").max_run_tests_calls == 3
+    with pytest.raises(KeyError, match="no limits for agent"):
+        limits.for_agent("verifier")
+
+
+def test_missing_specialist_limits_rejected(tmp_path: Path):
+    text = SPAWN + "limits:\n  single:\n    max_model_calls: 25\n    max_tool_calls: 40\n"
+    with pytest.raises(ValidationError):
+        load_review_config(_review_yaml(tmp_path, text))
+
+
+def test_non_positive_run_tests_limit_rejected():
+    with pytest.raises(ValidationError):
+        AgentLimits(max_model_calls=1, max_tool_calls=1, max_run_tests_calls=0)
