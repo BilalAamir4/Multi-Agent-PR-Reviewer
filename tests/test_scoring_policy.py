@@ -110,6 +110,21 @@ ORCH = [
         "rerun_required",
         f"{TST} partial with no recorded cause",
     ),
+    # Stage 3 (decision 0011): the A2A security service not running, or its call failing.
+    (
+        orch(
+            "partial",
+            res("complete", BUG),
+            err(SEC, "RemoteUnavailable", notes=["security service unavailable: http://x:2025"]),
+        ),
+        "rerun_required",
+        f"RemoteUnavailable ({SEC})",
+    ),
+    (
+        orch("partial", res("complete", BUG), err(SEC, "RemoteError")),
+        "rerun_required",
+        f"RemoteError ({SEC})",
+    ),
 ]
 
 

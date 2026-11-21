@@ -1,8 +1,8 @@
 """``reviewer`` command line (stage 1B; specialists since stage 2A).
 
     uv run reviewer review [--agent NAME] --workspace PATH --diff PATH [--title TEXT]
-        [--body-file PATH] [--focus TEXT] [--sandbox-repo NAME] [--out PATH] [--eval-mode]
-        [--debug]
+        [--body-file PATH] [--focus TEXT] [--sandbox-repo NAME] [--security-mode local|remote]
+        [--out PATH] [--eval-mode] [--debug]
     uv run reviewer review --item item_001 [--out PATH] [--eval-mode] [--debug]
 
 ``--agent`` is ``single`` (the default, the stage 1 baseline), one of the specialists
@@ -11,7 +11,10 @@ calls the specialists as tools, merges their findings). ``--focus`` is for speci
 ``--sandbox-repo`` names an ``eval/repos.yaml`` entry whose image ``run_tests`` uses (a dataset
 item uses its own repository's entry). Specialists are not run on dataset items before the
 stage 5 evaluation, and neither is the orchestrator (``eval.run --config orchestrator`` runs it
-there), so ``--item`` works only with ``--agent single``.
+there), so ``--item`` works only with ``--agent single``. ``--security-mode`` (orchestrator and
+``--agent security_reviewer`` only) overrides ``a2a.security_reviewer.mode`` of
+``config/review.yaml`` for this run: ``remote`` calls the A2A security service (stage 3,
+decision 0011; start it with ``scripts/run_a2a_security.py``), ``local`` runs it in this process.
 
 Exit codes: 0 complete, 5 partial, 3 quota_paused, 4 limit_reached, 1 error (2 for bad
 arguments).
@@ -31,11 +34,11 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-from reviewer.agents.orchestrator import OrchestratorResult, orchestrate
+from reviewer.agents.orchestrator import OrchestratorResult, orchestrate, run_security_remote
 from reviewer.agents.single import ReviewResult, review
 from reviewer.agents.specialists import NAMES as SPECIALISTS
 from reviewer.agents.specialists import run_specialist
-from reviewer.config import repo_root
+from reviewer.config import load_review_config, repo_root
 from reviewer.models import QuotaRouter
 from reviewer.tools import ReviewContext, SandboxSpec
 
@@ -222,6 +225,11 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--body-file", type=Path, help="file with the pull request description")
     r.add_argument("--focus", help="what a specialist should pay attention to")
     r.add_argument("--sandbox-repo", help="eval/repos.yaml entry whose image run_tests uses")
+    r.add_argument(
+        "--security-mode",
+        choices=("local", "remote"),
+        help="run the security specialist locally or on the A2A service (overrides the config)",
+    )
     r.add_argument("--item", help="dataset item id, for example item_001 (single agent only)")
     r.add_argument("--out", type=Path, help="write the full ReviewResult as JSON here")
     r.add_argument("--eval-mode", action="store_true", help="pinned evaluation model (D4)")
@@ -243,6 +251,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.focus and args.agent in ("single", ORCHESTRATOR):
         parser.error("--focus is for the specialists, not the single agent or the orchestrator")
+    if args.security_mode and args.agent not in (ORCHESTRATOR, "security_reviewer"):
+        parser.error("--security-mode is for --agent orchestrator or --agent security_reviewer")
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING)
     load_dotenv(repo_root() / ".env")
 
@@ -255,10 +265,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             title = args.title
             body = args.body_file.read_bytes().decode("utf-8") if args.body_file else ""
         router = make_router(args.eval_mode)
+        config = load_review_config()
+        if args.security_mode:
+            config = config.with_security_mode(args.security_mode)
         if args.agent == "single":
             result = review(ctx, title, body, router, item_id=args.item)
         elif args.agent == ORCHESTRATOR:
-            result = orchestrate(ctx, title, body, router, item_id=args.item)
+            result = orchestrate(ctx, title, body, router, item_id=args.item, config=config)
+        elif args.agent == "security_reviewer" and args.security_mode == "remote":
+            result = run_security_remote(
+                ctx,
+                pr_title=title,
+                pr_body=body,
+                focus=args.focus,
+                evaluation=args.eval_mode,
+                config=config,
+                item_id=args.item,
+            )
         else:
             result = run_specialist(
                 args.agent,

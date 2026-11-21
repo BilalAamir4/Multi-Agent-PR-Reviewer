@@ -52,7 +52,9 @@ CONFIGS = ("single", "orchestrator")
 # Scoring policy for every configuration (decision 0010). Infrastructure causes say nothing about
 # the architecture, so the item is re-run; every other end state is scored with the findings that
 # exist (an agent that failed contributes nothing).
-INFRA_ERRORS = frozenset({"RetriesExhausted", "AllExhausted"})
+# RemoteUnavailable and RemoteError: the A2A service could not be reached or its call failed
+# (decision 0011); that says nothing about the architecture either.
+INFRA_ERRORS = frozenset({"RetriesExhausted", "AllExhausted", "RemoteUnavailable", "RemoteError"})
 SANDBOX_NOTE = "sandbox unavailable"
 
 
@@ -82,8 +84,9 @@ def decide_scoring(result: ReviewResult) -> tuple[str, str]:
     example ``NoStructuredResponse`` or a fatal model error); ``partial`` where every
     non-complete child ended ``limit_reached``, a non-infrastructure ``error`` or such a
     ``partial``. Rerun required: any ``quota_paused``; ``RetriesExhausted`` or ``AllExhausted``
-    anywhere in the review; a ``partial`` caused by ``sandbox unavailable`` (D2b); a ``partial``
-    with no recorded cause."""
+    anywhere in the review; a ``partial`` caused by ``sandbox unavailable`` (D2b); the A2A
+    security service not running or its call failing (``RemoteUnavailable``, ``RemoteError``,
+    decision 0011); a ``partial`` with no recorded cause."""
     cause = _rerun_cause(result)
     if cause is not None:
         return "rerun_required", cause
@@ -130,6 +133,8 @@ def run_item(
     ``decide_scoring`` says ``scored``); the decision and its cause go in the run file."""
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     ctx, title, body = item_inputs(item_id)
+    review_config = load_review_config()
+    security_mode = review_config.a2a.security_reviewer.mode if config == "orchestrator" else None
     if config == "orchestrator":
         result = orchestrate(ctx, title, body, router, item_id=item_id)
     else:
@@ -138,11 +143,24 @@ def run_item(
     run_log = _load_run_log(run_path)
     extra: dict[str, Any] = {}
     if isinstance(result, OrchestratorResult):
+        security = next((c for c in result.children if c.agent == "security_reviewer"), None)
         extra = {
             "plan": [e.model_dump() for e in result.plan],
             "children": {c.agent: c.status for c in result.children},
             "wait_s_sum": result.wait_s_sum,
             "wait_s_wall": result.wait_s_wall,
+            "own_model_calls": result.own_model_calls,
+            "own_input_tokens": result.own_input_tokens,
+            "own_output_tokens": result.own_output_tokens,
+            # Stage 3 (decision 0011): how the security specialist was reached. The configured
+            # mode comes from config/review.yaml only; the transport is what the child recorded.
+            "security_mode": security_mode,
+            "security_transport": security.transport if security else None,
+            "security_transport_detail": (
+                security.transport_detail.model_dump()
+                if security and security.transport_detail
+                else None
+            ),
         }
     decision, cause = decide_scoring(result)
     run_log.append(
@@ -169,6 +187,7 @@ def run_item(
         run_path,
         {
             "result": result.model_dump(mode="json"),
+            "security_mode": security_mode,
             "scoring": {"decision": decision, "cause": cause},
             "run_log": run_log,
         },

@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "security_reviewer": "./graph.py:graph"
+  },
+  "env": "../.env"
+}

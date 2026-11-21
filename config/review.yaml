@@ -25,3 +25,11 @@ limits:
   orchestrator:
     max_model_calls: 8
     max_tool_calls: 12
+# Stage 3 (decision 0011): where the orchestrator runs each specialist that has its own service.
+# mode local: in this process (run_security_review). mode remote: over A2A at base_url
+# (`uv run python scripts/run_a2a_security.py` starts the service). The CLI's --security-mode
+# overrides this for one run; eval.run reads only this file and records the mode it used.
+a2a:
+  security_reviewer:
+    mode: local        # local | remote
+    base_url: http://127.0.0.1:2025

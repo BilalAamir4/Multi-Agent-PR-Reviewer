@@ -492,6 +492,34 @@ def test_security_review_json_round_trip(tmp_path, router, fake_time):
     assert [Finding(**f) for f in response["findings"]] == direct.findings
 
 
+def test_security_review_response_carries_retries_waits_and_intervals(tmp_path, router, fake_time):
+    """Task 0 of stage 3: waits by reason, retries by reason and each wait's start and end as Unix
+    timestamps (D7 across processes). 14 calls against 13 starts per 60 s make the later calls
+    wait on the rate limiter (fake clock, no real sleeping)."""
+    import time
+
+    ctx = ctx_for("security_reviewer", tmp_path, sandbox=None)
+    msgs = [ai(tool_call("list_changed_files")) for _ in range(14)] + [answer([])]
+    script(router, msgs)
+    before = time.time()
+    response = run_security_review(_request(ctx), router=router, clock=fake_time.clock)
+    after = time.time()
+    assert response["status"] == "complete" and response["counts"]["model_calls"] == 15
+    waits = response["waits_by_reason"]
+    assert set(waits) == {"rate_limiter"} and waits["rate_limiter"] > 0
+    assert response["retries_by_reason"] == {}
+    intervals = response["wait_intervals"]
+    assert intervals and all(set(i) == {"start", "end", "reason"} for i in intervals)
+    assert all(i["reason"] == "rate_limiter" and i["start"] < i["end"] for i in intervals)
+    # Unix timestamps: the fake clock started at 1000.0, but the intervals sit near the real now.
+    assert all(before - 1000 <= i["start"] and i["end"] <= after + 1000 for i in intervals)
+    assert sum(i["end"] - i["start"] for i in intervals) == pytest.approx(
+        sum(waits.values()), abs=0.01
+    )
+    assert intervals == sorted(intervals, key=lambda i: (i["start"], i["end"]))
+    assert json.loads(json.dumps(response)) == response
+
+
 @pytest.mark.parametrize(
     "change",
     [{"evaluation": "yes"}, {"extra": 1}],
@@ -518,6 +546,16 @@ def _canned(status: str, **kw) -> ReviewResult:
         evaluation=False,
         **kw,
     )
+
+
+def test_response_carries_retries_by_reason():
+    res = _canned(
+        "complete", retries_by_reason={"retry_server": 2}, waits_by_reason={"retry_server": 30.0}
+    )
+    response = result_to_response(res)
+    assert response["retries_by_reason"] == {"retry_server": 2}
+    assert response["waits_by_reason"] == {"retry_server": 30.0}
+    assert response["wait_intervals"] == []
 
 
 def _argv(ctx, tmp_path, *extra: str) -> list[str]:

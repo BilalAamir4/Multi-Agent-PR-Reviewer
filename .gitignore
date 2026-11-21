@@ -5,8 +5,11 @@ __pycache__/
 .ruff_cache/
 .env
 quota_state.json
+quota_state.a2a.json
 *.sqlite
 *.sqlite3
 .langgraph_api/
 eval/repos/
 eval/workspaces/
+a2a_security/service.pid
+a2a_security/service.log

@@ -49,11 +49,35 @@ class LimitsConfig(BaseModel):
         return getattr(self, name)
 
 
+class A2AAgentConfig(BaseModel):
+    """How the orchestrator reaches one specialist (stage 3, decision 0011): in this process
+    (``local``) or over A2A at ``base_url`` (``remote``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["local", "remote"]
+    base_url: str
+
+
+class A2AConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    security_reviewer: A2AAgentConfig
+
+
 class ReviewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spawn: SpawnConfig
     limits: LimitsConfig
+    a2a: A2AConfig = A2AConfig(
+        security_reviewer=A2AAgentConfig(mode="local", base_url="http://127.0.0.1:2025")
+    )
+
+    def with_security_mode(self, mode: Literal["local", "remote"]) -> ReviewConfig:
+        """A copy with the security specialist's mode replaced (the CLI's ``--security-mode``)."""
+        agent = self.a2a.security_reviewer.model_copy(update={"mode": mode})
+        return self.model_copy(update={"a2a": A2AConfig(security_reviewer=agent)})
 
 
 def repo_root() -> Path:

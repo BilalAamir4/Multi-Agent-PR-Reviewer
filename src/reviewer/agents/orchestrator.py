@@ -35,12 +35,19 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langsmith.utils import tracing_is_enabled
 from pydantic import BaseModel, ConfigDict, Field
 
+from reviewer.a2a_client import (
+    RemoteError,
+    RemoteUnavailable,
+    call_remote_security,
+    trace_headers,
+)
 from reviewer.agents.base import (
     PROMPTS_DIR,
     AgentSpec,
     Attempt,
     ReviewResult,
     Status,
+    TransportDetail,
     _PerCallRateLimit,
     _UsageCounter,
     build_agent,
@@ -63,6 +70,7 @@ from reviewer.models import (
     QuotaRouter,
     WaitLog,
     attach_waits,
+    current_wait_log,
     review_waits,
 )
 from reviewer.schemas import Finding
@@ -184,11 +192,119 @@ def response_to_result(
     response: dict[str, Any], limits: AgentLimits, item_id: str | None = None
 ) -> ReviewResult:
     """A ``ReviewResult`` from ``run_security_review``'s JSON response. The response has no
-    attempts, waits by reason or trace id, so those stay empty."""
+    attempts or trace id, so those stay empty; ``wait_intervals``, ``service`` and ``transport``
+    are not result fields (the caller uses them)."""
     counts = response["counts"]
-    data = {k: v for k, v in response.items() if k != "counts"}
+    # ``transport`` in a client response is the call's timing block, not the result's field.
+    data = {
+        k: v for k, v in response.items() if k in ReviewResult.model_fields and k != "transport"
+    }
     return ReviewResult.model_validate(
         {**data, **counts, "limits": limits.model_dump(), "item_id": item_id}
+    )
+
+
+def remote_unavailable_result(
+    exc: RemoteUnavailable, limits: AgentLimits, evaluation: bool, item_id: str | None = None
+) -> ReviewResult:
+    """The security child when the service is not running: ``error`` with a note, so the review
+    is ``partial`` and, by the scoring policy, ``rerun_required`` (infrastructure)."""
+    return ReviewResult(
+        status="error",
+        agent=SECURITY,
+        notes=[f"security service unavailable: {exc.base_url}"],
+        error_class="RemoteUnavailable",
+        error=str(exc),
+        prompt_version=specialist_spec(SECURITY).prompt_version(),
+        limits=limits,
+        evaluation=evaluation,
+        item_id=item_id,
+        transport="a2a",
+    )
+
+
+def remote_error_result(
+    exc: RemoteError, limits: AgentLimits, evaluation: bool, item_id: str | None = None
+) -> ReviewResult:
+    return ReviewResult(
+        status="error",
+        agent=SECURITY,
+        notes=[f"security service call failed: {exc.code}"],
+        error_class="RemoteError",
+        error=str(exc)[:500],
+        prompt_version=specialist_spec(SECURITY).prompt_version(),
+        limits=limits,
+        evaluation=evaluation,
+        item_id=item_id,
+        transport="a2a",
+    )
+
+
+def join_remote_waits(
+    intervals: list[dict[str, Any]], model_id: str, clock: Callable[[], float]
+) -> None:
+    """Add the waits a remote specialist reported to the current review's wait log (D7 across
+    processes, decision 0011). Intervals are Unix timestamps; they are mapped onto ``clock`` by
+    the offset between the wall clock and ``clock`` now, which assumes both processes read the
+    same wall clock (true on one machine, not across machines). Each wait is stored as a
+    child's (``nested``), so the log's sum, union and per-reason counts include it once."""
+    wait_log = current_wait_log()
+    if wait_log is None:
+        return
+    offset = clock() - time.time()
+    for w in intervals:
+        seconds = max(0.0, float(w["end"]) - float(w["start"]))
+        if seconds > 0:
+            wait_log.record(model_id, w["reason"], seconds, float(w["end"]) + offset, nested=True)
+
+
+def run_security_remote(
+    ctx: ReviewContext,
+    *,
+    pr_title: str,
+    pr_body: str,
+    focus: str | None,
+    evaluation: bool,
+    config: ReviewConfig,
+    item_id: str | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    tool_config: RunnableConfig | None = None,
+) -> ReviewResult:
+    """The security specialist's ``ReviewResult`` from the A2A service at
+    ``config.a2a.security_reviewer.base_url`` (decision 0011). A service that is not running is
+    an ``error`` result with the note ``security service unavailable: <url>``; any other failed
+    call is an ``error`` result too. The service's waits join the current wait log (D7)."""
+    a2a = config.a2a.security_reviewer
+    limits = specialist_spec(SECURITY, config).limits
+    try:
+        response = call_remote_security(
+            ctx,
+            pr_title=pr_title,
+            pr_body=pr_body,
+            focus=focus,
+            evaluation=evaluation,
+            base_url=a2a.base_url,
+            trace_parent=trace_headers(tool_config),
+        )
+    except RemoteUnavailable as e:
+        return remote_unavailable_result(e, limits, evaluation, item_id)
+    except RemoteError as e:
+        return remote_error_result(e, limits, evaluation, item_id)
+    info = response["transport"]
+    service = response.get("service") or {}
+    join_remote_waits(response["wait_intervals"], response["model_id"] or "remote", clock)
+    result = response_to_result(response, limits, item_id)
+    return result.model_copy(
+        update={
+            "transport": "a2a",
+            "transport_detail": TransportDetail(
+                base_url=info["base_url"],
+                service_pid=service.get("pid"),
+                service_version=service.get("version"),
+                round_trip_s=info["round_trip_s"],
+                request_bytes=info["request_bytes"],
+            ),
+        }
     )
 
 
@@ -206,10 +322,25 @@ def default_runner(
     config: ReviewConfig,
 ) -> SpecialistRunner:
     """Runs the real specialists. The security one goes through ``run_security_review`` (the
-    stage 3 entry point, JSON in and out) so the transport can change without touching this
-    module; the other two through ``run_specialist``."""
+    stage 3 entry point, JSON in and out) in ``local`` mode, or through the A2A client in
+    ``remote`` mode (``config.a2a.security_reviewer``); the other two through
+    ``run_specialist``."""
+    a2a = config.a2a.security_reviewer
+    security_limits = specialist_spec(SECURITY, config).limits
 
     def run(name: str, focus: str | None, tool_config: RunnableConfig) -> ReviewResult:
+        if name == SECURITY and a2a.mode == "remote":
+            return run_security_remote(
+                ctx,
+                pr_title=pr_title,
+                pr_body=pr_body,
+                focus=focus,
+                evaluation=router.evaluation,
+                config=config,
+                item_id=item_id,
+                clock=clock,
+                tool_config=tool_config,
+            )
         if name == SECURITY:
             response = run_security_review(
                 {
@@ -224,7 +355,8 @@ def default_runner(
                 clock=clock,
                 parent_config=tool_config,
             )
-            return response_to_result(response, specialist_spec(name, config).limits, item_id)
+            result = response_to_result(response, security_limits, item_id)
+            return result.model_copy(update={"transport": "local"})
         return run_specialist(
             name,
             ctx,
@@ -475,7 +607,7 @@ def orchestrate(
     )
     collector = SpecialistCollector(runner)
     tools = make_specialist_tools(collector)
-    foreign = frozenset(t.name for t in tools)
+    foreign = frozenset(NAMES)  # agents that run below this one; their events are not ours
     attempts: list[Attempt] = []
     tags = [spec.name, item_id or "adhoc"]
     notes = ToolNotes()

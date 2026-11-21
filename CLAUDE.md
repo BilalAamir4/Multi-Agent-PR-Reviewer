@@ -21,6 +21,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   `docs/decisions/0008-specialists.md`.
 - Orchestrator, specialist tools and cache, merge, statuses, nested and parallel waits, routing
   test: `docs/decisions/0009-orchestrator.md`.
+- The security specialist as an A2A service (request/response schema, snapshot transport, parity
+  rule, quota state, D7 across processes, limitations): `docs/decisions/0011-a2a-security-service.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -61,6 +63,11 @@ docker build -t mapr-sandbox-dev_fixture:local sandbox_images/dev_fixture   # ru
 uv run reviewer review --agent orchestrator --workspace PATH --diff PATH `
     [--sandbox-repo NAME] [--eval-mode] [--out PATH]   # plan, specialists as tools, merge; no --item
 uv run pytest -q -m integration tests/test_integration_orchestrator.py -s   # routing test (dev fixtures only)
+uv run python scripts/run_a2a_security.py           # start the security service (127.0.0.1:2025)
+uv run python scripts/run_a2a_security.py --stop    # stop it
+uv run python scripts/check_a2a_parity.py [--probe]  # live parity local vs A2A (spends model calls)
+uv run pytest -q -m integration tests/test_integration_a2a.py  # HTTP path, fake model, port 2026-2028
+uv run reviewer review --agent orchestrator ... --security-mode remote|local   # default: config/review.yaml
 uv run python -m eval.run --config single [--items ...] [--force] [--reason TEXT]  # eval + score
 uv run python -m eval.run --config orchestrator ...   # same for the orchestrator; NOT before stage 5
 ```
@@ -99,6 +106,12 @@ run the model checks in loops.
   them only on the dev fixtures in `tests/fixtures/dev_*` (`tests/dev_pr.py`); the CLI refuses
   `--item` with a specialist or the orchestrator. `eval.run --config orchestrator` is for stage 5. `single.md` stays one frozen file; it never uses `prompts/common/`.
 - Do not add placeholder modules for later stages.
+- The A2A service listens on 127.0.0.1 only and has no authentication (decision 0011). Its model
+  fake (`REVIEWER_TEST_FAKE_MODEL`) works only with `REVIEWER_TEST_MODE=1`. `quota_state.a2a.json`,
+  `a2a_security/service.pid` and `.log` are gitignored.
+- **Stage 5 runs record the transport** (`security_mode`, `security_transport`,
+  `security_transport_detail` in every runs file; `a2a.security_reviewer.mode` in
+  `config/review.yaml`). Start the service first when the mode is `remote`.
 
 ## Layout
 
@@ -166,7 +179,7 @@ run the model checks in loops.
 | 2B Orchestrator calling the specialists, routing test | done (decision 0009): docs-only skip passed 2/2 |
 | 2C Per-call retries; finish the routing test; scoring policy | done (decision 0010): `dev_risky_pr` ended `complete` 2/2 with all three specialists called |
 | **Stage 2** | **complete** |
-| 3 A2A | not started |
+| 3 A2A | done (decision 0011): security specialist as a service; live parity passed on 3 dev fixtures and the remote end-to-end run ended `complete` (only if `docs/a2a-parity.json` and ADR 0011 record both) |
 | 4 Spawning workers | not started |
 | 5 Evaluation | not started |
 | 6 Approval and service | not started |

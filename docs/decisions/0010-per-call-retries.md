@@ -108,14 +108,21 @@ and is based on the **cause** (`eval.run.decide_scoring`):
   - any `quota_paused`, at the top or in a child;
   - `RetriesExhausted` or `AllExhausted` anywhere in the review;
   - a `partial` caused by `sandbox unavailable` (D2b): Docker being down says nothing about the
-    architecture.
+    architecture;
+  - **(stage 3, decision 0011)** `RemoteUnavailable` or `RemoteError` in a child: the A2A security
+    service was not running (`security service unavailable: <url>`), or reaching it failed (HTTP
+    error, JSON-RPC error, failed task, timeout, invalid response). It is infrastructure like the
+    sandbox: the item is re-run, not scored.
 - The decision and its cause are stored in the item's runs file (`runs/<item>.json`:
   `scoring: {decision: scored | rerun_required, cause}` and the same in every `run_log` entry), and
   `summary.md` lists the counts (latest decision per item, and recorded runs versus
   `rerun_required` runs).
 - `eval/score.py` is unchanged.
 
-Interpretations: `PromptTooLarge` (the PR does not fit the evaluation model, deterministic) is a
+Interpretations: *(stage 3)* every remote call failure, not only "service not running", is
+treated as infrastructure; a remote service that answered with an `error` response of its own
+(for example `RetriesExhausted` or `PromptTooLarge` inside the service) follows the existing rules
+for those error classes. `PromptTooLarge` (the PR does not fit the evaluation model, deterministic) is a
 non-infrastructure error and is scored with the findings that exist; a `partial` with no child
 explanation and no sandbox note, or a child `partial` without a sandbox note, has no recorded
 cause and is treated as `rerun_required` rather than guessed. The policy applies to runs made from
@@ -127,7 +134,8 @@ Run after this change, in evaluation mode: **2 of 2 runs ended `complete` with a
 specialists called**, one with 2 per-call retries (two 503s, each recovered on its first retry
 with a 15 s wait, no task re-run), one with none. The stage 2 done criterion is met. The
 table of both runs, and the call-accounting defect found while collecting them, are in decision
-0009 (§ Stage 2C). `dev_docs_pr` was not re-run (passed 2/2 on the same prompt in 2B;
+0009 (§ Stage 2C; the defect was fixed in stage 3, decision 0011, and the figures there are the
+corrected ones: 25 model calls and 76,215 in / 2,262 out in total per run). `dev_docs_pr` was not re-run (passed 2/2 on the same prompt in 2B;
 per-call retries do not change routing).
 
 Tests: `tests/test_call_retries.py` (per-call behaviour, with fake models raising the real

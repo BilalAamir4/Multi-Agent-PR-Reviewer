@@ -16,7 +16,7 @@ from langchain_core.runnables import RunnableConfig
 
 from reviewer.agents.base import PROMPTS_DIR, AgentSpec, ReviewResult, run_agent
 from reviewer.config import ReviewConfig, load_review_config
-from reviewer.models import QuotaRouter
+from reviewer.models import QuotaRouter, WaitLog, review_waits
 from reviewer.tools import ReviewContext
 
 ROLE = "specialist"  # the router chain in config/models.yaml
@@ -122,7 +122,24 @@ COUNT_KEYS = (
 )
 
 
-def result_to_response(result: ReviewResult) -> dict[str, Any]:
+def wait_intervals(
+    wait_log: WaitLog, clock: Callable[[], float] = time.monotonic
+) -> list[dict[str, Any]]:
+    """Every wait in ``wait_log`` as ``{"start", "end", "reason"}`` with Unix timestamps (D7
+    across processes, decision 0011). The log stores each wait's end on the recording clock;
+    ``clock`` is that clock, and the offset to the wall clock is taken now. Sorted by start."""
+    offset = time.time() - clock()
+    out = [
+        {"start": w.end - w.seconds + offset, "end": w.end + offset, "reason": w.reason}
+        for w in wait_log.waits
+        if w.seconds > 0
+    ]
+    return sorted(out, key=lambda i: (i["start"], i["end"]))
+
+
+def result_to_response(
+    result: ReviewResult, intervals: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """The JSON response of ``run_security_review`` for one ``ReviewResult``."""
     data = result.model_dump(mode="json")
     return {
@@ -140,6 +157,9 @@ def result_to_response(result: ReviewResult) -> dict[str, Any]:
         "prompt_version": data["prompt_version"],
         "evaluation": data["evaluation"],
         "counts": {k: data[k] for k in COUNT_KEYS},
+        "retries_by_reason": data["retries_by_reason"],
+        "waits_by_reason": data["waits_by_reason"],
+        "wait_intervals": intervals or [],
     }
 
 
@@ -167,15 +187,18 @@ def run_security_review(
         raise ValueError("evaluation must be true or false")
     ctx = ReviewContext.from_text(Path(request["workspace"]), str(request["diff_text"]))
     router = router or QuotaRouter(evaluation=evaluation)
-    result = run_specialist(
-        SECURITY,
-        ctx,
-        pr_title=str(request["pr_title"] or ""),
-        pr_body=str(request["pr_body"] or ""),
-        focus=request["focus"],
-        router=router,
-        evaluation=evaluation,
-        clock=clock,
-        parent_config=parent_config,
-    )
-    return result_to_response(result)
+    # The review's own wait log: the run's waits nest into it (and on into the caller's log, when
+    # there is one), which is where the intervals come from.
+    with review_waits() as wait_log:
+        result = run_specialist(
+            SECURITY,
+            ctx,
+            pr_title=str(request["pr_title"] or ""),
+            pr_body=str(request["pr_body"] or ""),
+            focus=request["focus"],
+            router=router,
+            evaluation=evaluation,
+            clock=clock,
+            parent_config=parent_config,
+        )
+    return result_to_response(result, wait_intervals(wait_log, clock))

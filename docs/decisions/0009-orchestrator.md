@@ -4,6 +4,12 @@ Date: Nov 21, 2026 (stage 2C results added Nov 22, 2026) · Status: accepted, **
 D6, D7, D11, plan § Production concerns (limits), routing doc S4 and S6. Refines D7 for
 parallel runs (does not replace it). Replaces no locked decision.
 
+> **Correction (stage 3, decision 0011, Nov 22, 2026).** The call and token figures recorded
+> below for the stage 2B and 2C runs were inflated by a counting defect: the orchestrator's own
+> counter also counted its specialists' model calls and tokens, and the specialists were then added
+> again as children. It is fixed (cause and corrected values in § Stage 2C and in decision 0011).
+> Where a figure below is marked *corrected*, that is the true one.
+
 Stage 2 is done when the orchestrator skips the security specialist on a docs-only change and
 calls all three specialists on a risky one, with a `complete` review. **Status: done (stage 2C).**
 Docs-only skip: passed 2/2 (stage 2B). `dev_risky_pr`: in stage 2B it routed correctly 2/2 but
@@ -123,9 +129,11 @@ work), which gives its interval.
 
 - `model_calls`, `tool_calls`, `tool_calls_by_tool`, `input_tokens`, `output_tokens`: the
   orchestrator's own **plus** all children's; `own_*` are the orchestrator alone. The usage
-  counter ignores child events (callbacks are inherited by child runs; it follows
-  `parent_run_id` and skips everything below a specialist tool call), so nothing is counted
-  twice.
+  counter ignores child events (callbacks are inherited by child runs). *Stage 2B followed
+  `parent_run_id` links up to the specialist's tool run; that broke when LangSmith tracing was on
+  (see § Stage 2C), and stage 3 replaced it: every agent run is tagged with its agent's name and
+  tags are inherited, so an event tagged with a specialist's name is not counted as the
+  orchestrator's own.* Nothing is counted twice.
 - `wait_s` = `wait_s_sum`: all waits added up, children's included. `wait_s_wall`: the time during
   which at least one wait was in progress, the union of the wait intervals. `duration_s`: wall
   clock. **`net_duration_s = duration_s - wait_s_wall`.**
@@ -187,7 +195,11 @@ routing; every failure was the API.
   model calls instead of about 25). The router's retry rules were not changed.
   Run 2 (all three called; LangSmith trace below): 61 model / 34 tool calls (orchestrator
   alone 34 / 9), 178,334 in / 2,800 out tokens, `wait_s_wall` 238.8 s, `wait_s_sum` 296.7 s,
-  duration 499.5 s, net 260.7 s.
+  duration 499.5 s, net 260.7 s. **Corrected (decision 0011):** the model-call figures were
+  inflated; the 34 "orchestrator alone" was really the review total, so the true figures are
+  **34 model calls in total, 7 of them the orchestrator's** (61 - 34 = 27 were the specialists';
+  34 - 27 = 7). The tool counts (34 total, 9 orchestrator) were right. The token figures cannot
+  be corrected exactly: the specialists' tokens were not recorded separately in this record.
 - `dev_logic_pr` (informational): **not run, budget** (the fixture exists).
 - Model calls used in the session: about 139 of the 170 allowed (probes included).
 - The stage 2 done criterion was therefore **only half shown** after stage 2B. Stage 2C closes it
@@ -216,17 +228,30 @@ not what the orchestrator decides.
   were in it or in the orchestrator itself (the review total is 2).
 - The merged review has 5 findings; `dropped` holds 5 `duplicate` entries (the specialists' own
   and the cross-specialist merge drops).
-- **Accounting defect found, not fixed here.** `model_calls`, `input_tokens` and `output_tokens`
-  of the orchestrator's own counter (`own_*`) include the specialists' calls, which are then added
-  again as children: the result's reported totals (45 model calls, 140,239 in / 4,159 out) and the
-  "orchestrator alone" figures (25 calls, 76,215 / 2,262) are inflated. The table above gives the
-  true figures: the orchestrator's own are `own_*` minus the children's (5 calls, 12,191 in / 365
-  out), and the review total equals the raw `own_*` (25 calls, 76,215 in / 2,262 out). The tool
-  counts are right (`own_tool_calls` 6, children 17). The same inflation is in the stage 2B figures
-  above (61 model calls was really about 34, "orchestrator alone 34" about 7). The unit tests with
-  fake models (`test_child_events_are_not_counted_as_the_orchestrators_own`) pass, and a fake-model
-  parallel check also counts correctly, so the leak only shows with the real Gemini model; its
-  cause is open and should be fixed before stage 5 reports calls and tokens.
+- **Accounting defect (found in stage 2C, fixed in stage 3).** `model_calls`, `input_tokens` and
+  `output_tokens` of the orchestrator's own counter (`own_*`) included the specialists' calls,
+  which were then added again as children, so the result's reported totals and its "orchestrator
+  alone" figures were inflated. Reported: 45 model calls, 140,239 in / 4,159 out in total and 25
+  calls, 76,215 / 2,262 "alone". **Corrected, both runs:** 25 model calls and 76,215 in / 2,262
+  out in total, of which the orchestrator's own were 5 calls and 12,191 in / 365 out (the
+  specialists': 7 + 6 + 7 = 20 calls, 64,024 in / 1,897 out). The tool counts were right
+  (`own_tool_calls` 6, children 17). The table above already shows the true figures. The same
+  inflation was in the stage 2B figures (see there).
+  **Cause (found in stage 3):** the fake-model tests never turned LangSmith tracing on, and the
+  real runs did. With tracing on, a model call made inside a LangGraph node gets as
+  `parent_run_id` the id of a LangSmith run-tree node that no callback handler was ever told
+  about (checked: the id equals `langsmith.run_helpers.get_current_run_tree().id` and does not
+  appear in any `on_chain_start`). `_UsageCounter` walked `parent_run_id` links from a model call
+  up to the specialist's tool run; the walk ended at that unknown id, so the specialist's model
+  calls and tokens were counted as the orchestrator's own. Tool runs are announced by callbacks
+  and linked correctly, which is why the tool counts were right. **Fix:** the counter no longer
+  follows run links. Each agent run is tagged with its agent's name (`AgentSpec.name` was
+  already a tag), tags are inherited by every run below it, and the orchestrator's counter skips
+  an event whose tags contain a specialist's name. The regression test
+  (`tests/test_usage_accounting.py`) runs real `create_agent` graphs with fake chat models, the
+  specialists through the real tool path with `parent_config` on a real `ToolNode`, three tool
+  calls in parallel threads, with tracing off and on (no network), and asserts exact counts; with
+  the old counter the tracing-on case fails (own model calls 9 instead of 3).
 - Model calls used in stage 2C: about 54 of the 90 allowed (2 probes, 25 + 25 review calls, 2
   failed 503 attempts).
 

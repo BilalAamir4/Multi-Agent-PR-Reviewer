@@ -1,0 +1,415 @@
+{
+  "dev_security_pr": {
+    "focus": "The new search query in vault/db.py and the admin login in vault/admin.py.",
+    "runs": {
+      "local_1": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "vault/db.py",
+            "category": "sql_injection",
+            "line_start": 30,
+            "line_end": 31,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in search_users"
+          },
+          {
+            "file": "vault/admin.py",
+            "category": "hardcoded_secret",
+            "line_start": 6,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded admin password"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 6,
+        "tool_calls": 5,
+        "input_tokens": 18038,
+        "output_tokens": 438,
+        "net_duration_s": 12.875,
+        "wait_s": 0.0,
+        "duration_s": 12.875,
+        "retries_by_reason": {},
+        "wall_s": 12.9,
+        "service": null,
+        "transport": null
+      },
+      "local_2": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "vault/db.py",
+            "category": "sql_injection",
+            "line_start": 30,
+            "line_end": 31,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in search_users"
+          },
+          {
+            "file": "vault/admin.py",
+            "category": "hardcoded_secret",
+            "line_start": 6,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded admin password"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 6,
+        "tool_calls": 5,
+        "input_tokens": 18038,
+        "output_tokens": 438,
+        "net_duration_s": 10.61,
+        "wait_s": 0.0,
+        "duration_s": 10.61,
+        "retries_by_reason": {},
+        "wall_s": 10.6,
+        "service": null,
+        "transport": null
+      },
+      "remote": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "vault/db.py",
+            "category": "sql_injection",
+            "line_start": 30,
+            "line_end": 31,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in search_users"
+          },
+          {
+            "file": "vault/admin.py",
+            "category": "hardcoded_secret",
+            "line_start": 6,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded admin password"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 6,
+        "tool_calls": 5,
+        "input_tokens": 18038,
+        "output_tokens": 438,
+        "net_duration_s": 27.765,
+        "wait_s": 0.0,
+        "duration_s": 27.765,
+        "retries_by_reason": {},
+        "wall_s": 28.8,
+        "service": {
+          "name": "security_reviewer",
+          "pid": 24252,
+          "version": "6f396484c1bb"
+        },
+        "transport": {
+          "name": "a2a",
+          "base_url": "http://127.0.0.1:2025",
+          "round_trip_s": 28.813,
+          "request_bytes": 4659
+        }
+      }
+    },
+    "parity": {
+      "local_vs_local": 0,
+      "remote_vs_local_1": 0,
+      "remote_vs_local_2": 0,
+      "nearest": 0,
+      "matches_a_local_exactly": true,
+      "passed": true
+    },
+    "all_complete": true
+  },
+  "dev_risky_pr": {
+    "focus": "The SQL in ledger/store.py and the sync URL it builds.",
+    "runs": {
+      "local_1": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "ledger/store.py",
+            "category": "sql_injection",
+            "line_start": 24,
+            "line_end": 24,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in entries_for"
+          },
+          {
+            "file": "ledger/store.py",
+            "category": "hardcoded_secret",
+            "line_start": 5,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded credentials in store.py"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 5,
+        "tool_calls": 4,
+        "input_tokens": 14741,
+        "output_tokens": 378,
+        "net_duration_s": 12.0,
+        "wait_s": 32.328,
+        "duration_s": 44.328,
+        "retries_by_reason": {
+          "retry_minute": 1
+        },
+        "wall_s": 44.3,
+        "service": null,
+        "transport": null
+      },
+      "local_2": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "ledger/store.py",
+            "category": "sql_injection",
+            "line_start": 24,
+            "line_end": 24,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in entries_for"
+          },
+          {
+            "file": "ledger/store.py",
+            "category": "hardcoded_secret",
+            "line_start": 5,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded credentials in store.py"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 5,
+        "tool_calls": 4,
+        "input_tokens": 14741,
+        "output_tokens": 378,
+        "net_duration_s": 51.578,
+        "wait_s": 0.0,
+        "duration_s": 51.578,
+        "retries_by_reason": {},
+        "wall_s": 51.6,
+        "service": null,
+        "transport": null
+      },
+      "remote": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "ledger/store.py",
+            "category": "sql_injection",
+            "line_start": 24,
+            "line_end": 24,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "SQL injection in entries_for"
+          },
+          {
+            "file": "ledger/store.py",
+            "category": "hardcoded_secret",
+            "line_start": 5,
+            "line_end": 6,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Hardcoded credentials in store.py"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 5,
+        "tool_calls": 4,
+        "input_tokens": 14741,
+        "output_tokens": 378,
+        "net_duration_s": 158.39,
+        "wait_s": 0.0,
+        "duration_s": 158.39,
+        "retries_by_reason": {},
+        "wall_s": 159.8,
+        "service": {
+          "name": "security_reviewer",
+          "pid": 24252,
+          "version": "6f396484c1bb"
+        },
+        "transport": {
+          "name": "a2a",
+          "base_url": "http://127.0.0.1:2025",
+          "round_trip_s": 159.719,
+          "request_bytes": 3768
+        }
+      }
+    },
+    "parity": {
+      "local_vs_local": 0,
+      "remote_vs_local_1": 0,
+      "remote_vs_local_2": 0,
+      "nearest": 0,
+      "matches_a_local_exactly": true,
+      "passed": true
+    },
+    "all_complete": true
+  },
+  "dev_pr": {
+    "focus": "The coupon handling in shop/cart.py and shop/coupons.py.",
+    "runs": {
+      "local_1": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "shop/cart.py",
+            "category": "missing_none_check",
+            "line_start": 22,
+            "line_end": 23,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Missing None check for coupon lookup result"
+          },
+          {
+            "file": "shop/catalog.py",
+            "category": "off_by_one",
+            "line_start": 35,
+            "line_end": 36,
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Incorrect slice range in catalog pagination"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 7,
+        "tool_calls": 6,
+        "input_tokens": 24650,
+        "output_tokens": 476,
+        "net_duration_s": 11.828,
+        "wait_s": 0.0,
+        "duration_s": 11.828,
+        "retries_by_reason": {},
+        "wall_s": 11.8,
+        "service": null,
+        "transport": null
+      },
+      "local_2": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "shop/cart.py",
+            "category": "missing_none_check",
+            "line_start": 22,
+            "line_end": 23,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Missing None check for coupon lookup result"
+          },
+          {
+            "file": "shop/catalog.py",
+            "category": "off_by_one",
+            "line_start": 35,
+            "line_end": 36,
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Incorrect slice range in catalog pagination"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 7,
+        "tool_calls": 6,
+        "input_tokens": 24650,
+        "output_tokens": 476,
+        "net_duration_s": 17.61,
+        "wait_s": 34.203,
+        "duration_s": 51.813,
+        "retries_by_reason": {},
+        "wall_s": 51.8,
+        "service": null,
+        "transport": null
+      },
+      "remote": {
+        "status": "complete",
+        "error": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "6f396484c1bb",
+        "findings": [
+          {
+            "file": "shop/cart.py",
+            "category": "missing_none_check",
+            "line_start": 22,
+            "line_end": 23,
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Missing None check for coupon lookup result"
+          },
+          {
+            "file": "shop/catalog.py",
+            "category": "off_by_one",
+            "line_start": 35,
+            "line_end": 36,
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Incorrect slice range in catalog pagination"
+          }
+        ],
+        "dropped": [],
+        "model_calls": 7,
+        "tool_calls": 6,
+        "input_tokens": 24650,
+        "output_tokens": 476,
+        "net_duration_s": 14.813,
+        "wait_s": 0.0,
+        "duration_s": 14.813,
+        "retries_by_reason": {},
+        "wall_s": 15.9,
+        "service": {
+          "name": "security_reviewer",
+          "pid": 24252,
+          "version": "6f396484c1bb"
+        },
+        "transport": {
+          "name": "a2a",
+          "base_url": "http://127.0.0.1:2025",
+          "round_trip_s": 15.89,
+          "request_bytes": 7473
+        }
+      }
+    },
+    "parity": {
+      "local_vs_local": 0,
+      "remote_vs_local_1": 0,
+      "remote_vs_local_2": 0,
+      "nearest": 0,
+      "matches_a_local_exactly": true,
+      "passed": true
+    },
+    "all_complete": true
+  }
+}

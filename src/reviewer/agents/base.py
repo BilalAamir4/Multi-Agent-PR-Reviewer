@@ -167,6 +167,19 @@ class Attempt(BaseModel):
     outcome: str = "running"  # complete, limit_reached, no_structured_response, or an error
 
 
+class TransportDetail(BaseModel):
+    """How a remote specialist was reached (stage 3, decision 0011): the service's process id and
+    prompt version, the round trip (request sent to response parsed) and the request size."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str
+    service_pid: int | None = None
+    service_version: str | None = None
+    round_trip_s: float
+    request_bytes: int
+
+
 class ReviewResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -198,6 +211,10 @@ class ReviewResult(BaseModel):
     retries_by_reason: dict[str, int] = Field(default_factory=dict)
     langsmith_run_id: str | None = None
     attempts: list[Attempt] = Field(default_factory=list)
+    # Stage 3: set for the security specialist when the orchestrator calls it ("local" in-process,
+    # "a2a" over the A2A service, with ``transport_detail``); None for everything else.
+    transport: Literal["local", "a2a"] | None = None
+    transport_detail: TransportDetail | None = None
 
 
 # --- Accounting ------------------------------------------------------------------------------
@@ -208,51 +225,30 @@ class _UsageCounter(BaseCallbackHandler):
     Tools may run in parallel threads, hence the lock.
 
     Callbacks in a run config are inherited by every child run, so an agent that calls another
-    agent inside a tool would also see the child's model and tool events. ``foreign_tools`` names
-    the tools whose descendants belong to another agent (the orchestrator's specialist tools):
-    the tool call itself is counted, everything below it is not (decision 0009). The handler
-    follows ``parent_run_id`` links to tell."""
+    agent inside a tool would also see the child's model and tool events. ``foreign_tags`` are
+    the names of the agents that run below this one (the orchestrator's specialists): every
+    agent run is tagged with its own name (``AgentSpec.name``) and tags are inherited by all
+    runs below it, so an event whose tags contain a foreign agent's name belongs to that agent
+    and is not counted here (decision 0011, which corrects decision 0009).
 
-    def __init__(self, attempt: Attempt, foreign_tools: frozenset[str] = frozenset()) -> None:
+    The first version followed ``parent_run_id`` links up to the specialist's tool run. That
+    breaks when LangSmith tracing is on: the model call's ``parent_run_id`` is then the id of a
+    LangSmith run-tree node that no callback ever announced, the chain ends there, and the
+    child's model calls were counted twice. Tags do not depend on tracing."""
+
+    def __init__(self, attempt: Attempt, foreign_tags: frozenset[str] = frozenset()) -> None:
         self.attempt = attempt
-        self.foreign_tools = foreign_tools
+        self.foreign_tags = foreign_tags
         self._lock = threading.Lock()
         self._tools: Counter[str] = Counter()
-        self._parents: dict[Any, Any] = {}
-        self._foreign_runs: set[Any] = set()
 
-    def _link(self, run_id: Any, parent_run_id: Any) -> None:
-        if self.foreign_tools:
-            with self._lock:
-                self._parents[run_id] = parent_run_id
+    def _foreign(self, tags: list[str] | None) -> bool:
+        return bool(self.foreign_tags and tags and not self.foreign_tags.isdisjoint(tags))
 
-    def _below_foreign(self, run_id: Any) -> bool:
-        """True when a strict ancestor of ``run_id`` is a foreign tool run."""
-        if not self._foreign_runs:
-            return False
-        with self._lock:
-            cur = self._parents.get(run_id)
-            for _ in range(200):
-                if cur is None:
-                    return False
-                if cur in self._foreign_runs:
-                    return True
-                cur = self._parents.get(cur)
-        return False
-
-    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs: Any):
-        self._link(run_id, parent_run_id)
-
-    def on_chat_model_start(
-        self, serialized, messages, *, run_id, parent_run_id=None, **kwargs: Any
+    def on_llm_end(
+        self, response: LLMResult, *, run_id=None, tags: list[str] | None = None, **kwargs: Any
     ) -> None:
-        self._link(run_id, parent_run_id)
-
-    def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id=None, **kwargs: Any):
-        self._link(run_id, parent_run_id)
-
-    def on_llm_end(self, response: LLMResult, *, run_id=None, **kwargs: Any) -> None:
-        if self._below_foreign(run_id):
+        if self._foreign(tags):
             return
         tin = tout = 0
         for gens in response.generations:
@@ -272,15 +268,13 @@ class _UsageCounter(BaseCallbackHandler):
         *,
         run_id=None,
         parent_run_id=None,
+        tags: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
-        self._link(run_id, parent_run_id)
-        if self._below_foreign(run_id):
+        if self._foreign(tags):
             return
         name = (serialized or {}).get("name") or kwargs.get("name") or "unknown"
         with self._lock:
-            if name in self.foreign_tools:
-                self._foreign_runs.add(run_id)
             self._tools[name] += 1
             self.attempt.tool_calls = dict(sorted(self._tools.items()))
 
