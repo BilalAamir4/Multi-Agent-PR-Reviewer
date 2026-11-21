@@ -33,11 +33,23 @@ limits:
     max_model_calls: 8
     max_tool_calls: 12
   # One sub-agent of a specialist (stage 4A, decision 0012); run_tests, where the specialist has
-  # it, is limited to one call.
+  # it, is limited to one call. Raised from 10 / 15 to 15 / 20 in stage 4B (decision 0012, § Stage
+  # 4B limit change).
   subagent:
-    max_model_calls: 10
-    max_tool_calls: 15
+    max_model_calls: 15
+    max_tool_calls: 20
     max_run_tests_calls: 1
+  # Stage 4B (decision 0013). One verification of one finding (tools read_diff, read_file,
+  # search_code) and the orchestrator re-judging all findings in one run (its own read-only tools).
+  verifier_per_finding:
+    max_model_calls: 6
+    max_tool_calls: 8
+  judge:
+    max_model_calls: 8
+    max_tool_calls: 12
+# Stage 4B (decision 0013): per-finding verifications running at once.
+verifier:
+  max_concurrency: 3
 # Stage 3 (decision 0011): where the orchestrator runs each specialist that has its own service.
 # mode local: in this process (run_security_review). mode remote: over A2A at base_url
 # (`uv run python scripts/run_a2a_security.py` starts the service). The CLI's --security-mode

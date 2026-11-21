@@ -190,7 +190,7 @@ def test_a_subagent_is_its_parent_with_one_fragment_added():
     assert sub.name == "bug_reviewer/sub2" and sub.run_name == "bug_reviewer/sub2-review"
     assert sub.role == "worker"
     assert sub.limits == REAL.limits.subagent
-    assert (sub.limits.max_model_calls, sub.limits.max_tool_calls) == (10, 15)
+    assert (sub.limits.max_model_calls, sub.limits.max_tool_calls) == (15, 20)
     assert sub.limits.max_run_tests_calls == 1
     assert sub.tools == parent.tools  # the same tools as the specialist
     assert sub.prompt_path == parent.prompt_path and sub.focus_categories == parent.focus_categories
@@ -746,7 +746,10 @@ def test_a_standalone_spawning_specialist_is_counted_once(tmp_path, ft, request,
 
 
 def test_the_orchestrator_with_the_expected_defects_is_informational():
-    """The three planted defects of ``dev_multi_pr`` are listed; the cross-file one is flagged."""
+    """The planted defects of ``dev_multi_pr`` are listed (three logic ones, the cross-file one
+    flagged, and the SQL surface added in stage 4B)."""
     defects = expected_defects(FIXTURE)
-    assert [d["kind"] for d in defects] == ["wrong_comparison", "off_by_one", "missing_none_check"]
-    assert [bool(d.get("cross_file")) for d in defects] == [False, False, True]
+    assert [d["kind"] for d in defects] == [
+        "wrong_comparison", "off_by_one", "missing_none_check", "sql_injection",
+    ]  # fmt: skip
+    assert [bool(d.get("cross_file")) for d in defects] == [False, False, True, False]

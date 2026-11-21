@@ -21,6 +21,11 @@ decision 0012) override ``spawn.enabled`` and ``spawn.max_concurrency`` of ``con
 for this run: with spawning on, a specialist whose share of the change is large (D12) spawns
 sub-agents over batches of its files. A remote security service applies its own config.
 
+``--agent graph`` (stage 4B, decision 0013) runs the review graph (review, judge, present) with the
+same options as ``--agent orchestrator`` plus ``--judge verifier|orchestrator|none`` (default
+``verifier``): it prints the approval payload in order with each finding's verdict, the findings
+the judge dropped and why, and the totals of each stage and overall.
+
 Exit codes: 0 complete, 5 partial, 3 quota_paused, 4 limit_reached, 1 error (2 for bad
 arguments).
 """
@@ -50,7 +55,9 @@ from reviewer.tools import ReviewContext, SandboxSpec
 PAKISTAN = ZoneInfo("Asia/Karachi")
 EXIT_CODES = {"complete": 0, "partial": 5, "quota_paused": 3, "limit_reached": 4, "error": 1}
 ORCHESTRATOR = "orchestrator"
-AGENTS = ("single", *SPECIALISTS, ORCHESTRATOR)
+GRAPH = "graph"
+AGENTS = ("single", *SPECIALISTS, ORCHESTRATOR, GRAPH)
+JUDGES = ("verifier", "orchestrator", "none")
 
 
 def make_router(evaluation: bool) -> QuotaRouter:
@@ -263,6 +270,61 @@ def format_orchestrator_report(result: OrchestratorResult) -> str:
     return "\n".join(lines)
 
 
+def _stage_line(name: str, t: dict[str, float]) -> str:
+    return (
+        f"  {name:<7} {t['model_calls']:.0f} model / {t['tool_calls']:.0f} tool calls, "
+        f"{t['input_tokens']:.0f} in / {t['output_tokens']:.0f} out, "
+        f"{t['net_duration_s']:.1f}s net, waits {t['wait_s_wall']:.1f}s wall-clock "
+        f"({t['wait_s_sum']:.1f}s summed), {t['duration_s']:.1f}s total"
+    )
+
+
+def format_graph_report(state: dict) -> str:
+    """The approval payload in order with verdicts, the dropped findings with reasons, the status
+    and the totals of each stage and overall (stage 4B)."""
+    from reviewer.graph import stage_totals
+
+    payload = state.get("approval_payload", [])
+    lines = [f"review: {state['review_key']}  judge: {state['judge']}", ""]
+    lines.append(f"approval payload ({len(payload)} finding(s), in order):")
+    if not payload:
+        lines.append("  (none)")
+    for i, e in enumerate(payload, 1):
+        a, b = e["line_start"], e["line_end"]
+        span = str(a) if a == b else f"{a}-{b}"
+        lines.append(
+            f"  {i}. [{e['severity']}] {e['file']}:{span} {e['category']} "
+            f"conf {e['confidence']:.2f} ({e['agent']}) {e['id']}"
+        )
+        lines.append(f"     {e['title']}")
+        why = f" - {e['verdict_reason']}" if e["verdict_reason"] else ""
+        lines.append(f"     verdict: {e['verdict']}{why}")
+    step = state.get("judge_result") or {}
+    dropped = step.get("dropped", [])
+    lines.append("")
+    lines.append(f"dropped by the judge ({len(dropped)}):")
+    if not dropped:
+        lines.append("  (none)")
+    for d in dropped:
+        draft = d["draft"]
+        lines.append(
+            f"  - {draft['file']}:{draft['line_start']}-{draft['line_end']} "
+            f"{draft['category']} {draft['title']} [{d['reason']}]: {d['detail']}"
+        )
+    lines.append("")
+    lines.append(f"status:  {state['status']}")
+    for note in state.get("notes", []):
+        lines.append(f"note:    {note}")
+    summary = state.get("review_result", {}).get("summary")
+    if summary:
+        lines.append(f"summary: {summary}")
+    totals = stage_totals(state)
+    lines.append("stages:")
+    for name in ("review", "judge", "total"):
+        lines.append(_stage_line(name, totals[name]))
+    return "\n".join(lines)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reviewer", description="Review a Python pull request.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -288,11 +350,61 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="sub-agents running at once per specialist (default: spawn.max_concurrency)",
     )
+    r.add_argument(
+        "--judge",
+        choices=JUDGES,
+        help="graph only: who keeps or drops the merged findings (default: verifier)",
+    )
     r.add_argument("--item", help="dataset item id, for example item_001 (single agent only)")
     r.add_argument("--out", type=Path, help="write the full ReviewResult as JSON here")
     r.add_argument("--eval-mode", action="store_true", help="pinned evaluation model (D4)")
     r.add_argument("--debug", action="store_true", help="tracebacks and debug logging")
     return parser
+
+
+def run_graph_command(args, ctx: ReviewContext, title: str, body: str, config) -> int:
+    """``--agent graph``: run the review graph, print its report, write the final state."""
+    import uuid
+
+    from langsmith.utils import tracing_is_enabled
+
+    from reviewer.graph import GraphRuntime, make_review_key, run_graph
+
+    state = {
+        "review_key": make_review_key(ctx.diff_text),
+        "pr_title": title,
+        "pr_body": body,
+        "workspace": str(args.workspace),
+        "diff_path": str(args.diff),
+        "sandbox_repo": args.sandbox_repo,
+        "security_mode": args.security_mode,
+        "spawn_enabled": config.spawn.enabled,
+        "judge": args.judge or "verifier",
+        "evaluation": args.eval_mode,
+    }
+    run_id = uuid.uuid4()
+    final = run_graph(state, GraphRuntime(config=config), config={"run_id": run_id})
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_bytes(
+            (json.dumps(final, indent=2, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+        )
+    print(format_graph_report(final))
+    if tracing_is_enabled():
+        print(f"trace:   LangSmith root run review-graph {run_id}")
+    review = final.get("review_result", {})
+    step = final.get("judge_result") or {}
+    for r in (step, review):
+        if r.get("status") == "quota_paused" and r.get("reset_at"):
+            print(f"quota paused: {r.get('model_id')} resets at {r['reset_at']}")
+            break
+    if final["status"] == "error":
+        err = step.get("error") or review.get("error")
+        cls = step.get("error_class") or review.get("error_class")
+        print(f"error: {cls}: {err}".splitlines()[0], file=sys.stderr)
+    if args.out:
+        print(f"wrote {args.out}")
+    return EXIT_CODES[final["status"]]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -307,16 +419,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             "specialists and the orchestrator are not run on dataset items before the stage 5 "
             "evaluation"
         )
-    if args.focus and args.agent in ("single", ORCHESTRATOR):
+    if args.focus and args.agent in ("single", ORCHESTRATOR, GRAPH):
         parser.error("--focus is for the specialists, not the single agent or the orchestrator")
+    if args.judge and args.agent != GRAPH:
+        parser.error("--judge is for --agent graph")
     if args.agent == "single" and (args.no_spawn or args.subagent_concurrency is not None):
         parser.error(
             "--no-spawn and --subagent-concurrency are for the orchestrator and specialists"
         )
     if args.subagent_concurrency is not None and args.subagent_concurrency < 1:
         parser.error("--subagent-concurrency must be at least 1")
-    if args.security_mode and args.agent not in (ORCHESTRATOR, "security_reviewer"):
-        parser.error("--security-mode is for --agent orchestrator or --agent security_reviewer")
+    if args.security_mode and args.agent not in (ORCHESTRATOR, GRAPH, "security_reviewer"):
+        parser.error("--security-mode is for --agent orchestrator, graph or security_reviewer")
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING)
     load_dotenv(repo_root() / ".env")
 
@@ -337,6 +451,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 enabled=False if args.no_spawn else None,
                 max_concurrency=args.subagent_concurrency,
             )
+        if args.agent == GRAPH:
+            return run_graph_command(args, ctx, title, body, config)
         if args.agent == "single":
             result = review(ctx, title, body, router, item_id=args.item)
         elif args.agent == ORCHESTRATOR:

@@ -25,6 +25,9 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   rule, quota state, D7 across processes, limitations): `docs/decisions/0011-a2a-security-service.md`.
 - Specialists spawn sub-agents (stage 4A; replaces D6 and D12; spawn rules, batching, fan-out,
   merge, scoring, protocol 2, D6 reuse rule, timing result): `docs/decisions/0012-specialist-sub-agents.md`.
+- The review graph, the verifier and the orchestrator as judge (stage 4B; `ReviewState`, idempotent
+  nodes, `review_key`, verdicts and the keep-or-drop policy, row 4 and row 4b, cumulative cost):
+  `docs/decisions/0013-review-graph-verifier-judge.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -74,7 +77,15 @@ uv run reviewer review --agent bug_reviewer ... [--no-spawn] [--subagent-concurr
 uv run python -m eval.run --config single [--items ...] [--force] [--reason TEXT]  # eval + score
 uv run python -m eval.run --config orchestrator ...   # same for the orchestrator (spawning forced OFF, row 2); NOT before stage 5
 uv run python -m eval.run --config subagents ...      # row 3: D6 reuse of orchestrator results, else spawning on; needs --config orchestrator first
+uv run reviewer review --agent graph --judge verifier|orchestrator|none --workspace PATH --diff PATH `
+    [--sandbox-repo NAME] [--security-mode remote|local] [--no-spawn] [--eval-mode] [--out PATH]   # stage 4B: review -> judge -> present; prints the approval payload, dropped findings, per-stage totals
+uv run python -m eval.run --config verifier ...       # row 4: the verifier on the saved subagents findings; needs --config subagents first
+uv run python -m eval.run --config judge ...          # row 4b (optional): the orchestrator as judge on the same saved findings
+uv run python scripts/check_judges.py [--judge verifier|orchestrator|both]   # dev only: judge_mix.json on dev_pr (spends model calls)
 ```
+
+Stage 5 run order: `single` (already done) -> `orchestrator` -> `subagents` -> `verifier` -> optionally
+`judge`. The last two read `eval/results/subagents/` and run only the judge step on those findings.
 
 Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
 run the model checks in loops.
@@ -123,11 +134,25 @@ run the model checks in loops.
   `security_transport_detail` in every runs file; `a2a.security_reviewer.mode` in
   `config/review.yaml`). Start the service first when the mode is `remote`.
 
+- **Judging (decision 0013).** The verifier and the orchestrator as judge only keep or drop findings
+  (never edit, add or re-categorize); the policy is the same for both (drop only `rejected`). Tune
+  `prompts/verifier.md` and `prompts/common/judge.md` only on `tests/fixtures/dev_pr/judge_mix.json`
+  and record each revision in the ADR; on dataset items they run only through
+  `eval.run --config verifier|judge` (stage 5), on the saved `subagents` findings.
+
 ## Layout
 
 - `src/reviewer/agents/subagents.py` (spawn decision, batching, `Send` fan-out, cross-file pass),
   `agents/reports.py` (finding lines, duplicate-rule merge). Fixture `tests/fixtures/dev_multi_pr/`.
 
+- `src/reviewer/graph.py` (stage 4B): `build_graph(checkpointer=None, runtime=None)`, `run_graph`,
+  `GraphRuntime`, `make_review_key`, `stage_totals`; `ReviewState` is in `schemas.py` beside
+  `Finding`. `agents/judging.py` (verdict schemas, `run_structured`, the keep-or-drop policy,
+  `JudgeStepResult`), `agents/verifier.py` (one check per finding, `Send` fan-out, prompt
+  `prompts/verifier.md`), `agents/judge.py` (orchestrator as judge: `orchestrator.md` plus
+  `prompts/common/judge.md`, its own tools, one run). Config: `verifier:` and
+  `limits.verifier_per_finding` / `limits.judge` in `config/review.yaml`. Dev set:
+  `tests/fixtures/dev_pr/judge_mix.json`.
 - `src/reviewer/schemas.py`: `Finding` schema. `src/reviewer/config.py`: `config/review.yaml`
   (D12 spawn limit) and `config/models.yaml` (`load_models_config`).
 - `src/reviewer/sandbox.py`: `run_in_sandbox`, `get_client`, `SandboxUnavailable` (D2, D2b).
@@ -193,8 +218,8 @@ run the model checks in loops.
 | 2C Per-call retries; finish the routing test; scoring policy | done (decision 0010): `dev_risky_pr` ended `complete` 2/2 with all three specialists called |
 | **Stage 2** | **complete** |
 | 3 A2A | done (decision 0011): security specialist as a service; live parity passed on 3 dev fixtures and the remote end-to-end run ended `complete` (only if `docs/a2a-parity.json` and ADR 0011 record both) |
-| 4A Specialists spawn sub-agents, spawn switch, D6 reuse rule, timing criterion | done (decision 0012): parallel fan-out net 12.1 s vs 25.7 s sequential; orchestrator end-to-end on `dev_multi_pr` ended `partial` (see the ADR) |
-| 4B StateGraph around the review, verifier | not started |
+| 4A Specialists spawn sub-agents, spawn switch, D6 reuse rule, timing criterion | done (decision 0012): parallel fan-out net 12.1 s vs 25.7 s sequential; orchestrator end-to-end on `dev_multi_pr` ended `partial` (see the ADR); re-run in 4B with a SQL surface added to the fixture and `limits.subagent` 15 / 20: `complete`, all three specialists spawned |
+| 4B StateGraph around the review, verifier, orchestrator as judge (row 4b) | code, tests and ADR 0013 done; **not done**: the orchestrator-as-judge half of the judge mix and the full-graph run on `dev_multi_pr` are pending (daily quota), commands under "Pending" in the ADR |
 | 5 Evaluation | not started |
 | 6 Approval and service | not started |
 | 7 Hardening | not started |

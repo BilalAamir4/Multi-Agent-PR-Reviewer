@@ -4,7 +4,7 @@ Nov 16, 2026 · @Bilal · Updated Nov 19, 2026 with locked decisions
 
 ## What you are building
 
-A service that reviews a GitHub pull request the way a small team would. One orchestrator agent reads the change, calls specialist reviewer agents, spawns extra workers when the change is large, checks every finding, and posts comments only after a person approves.
+A service that reviews a GitHub pull request the way a small team would. One orchestrator agent reads the change, calls specialist reviewer agents, spawns sub-agents when a specialist's share of the change is large, checks every finding, and posts comments only after a person approves.
 
 The project answers one question with numbers: does splitting a review across several agents find more real bugs than one agent, and what does that cost in money and time?
 
@@ -20,7 +20,7 @@ Every skill an agent role asks about maps to a visible part of the project.
 | Structured output | Every finding is a validated object: file, lines, category, severity, evidence |
 | Planning and routing | The orchestrator decides which specialists a change needs |
 | An agent calling other agents | Three standing specialists, each wrapped as a tool the orchestrator calls |
-| An agent spawning sub-agents | Temporary workers created at run time, one per file, for large diffs |
+| An agent spawning sub-agents | Temporary sub-agents created at run time by a specialist, one per batch of 2 to 3 of its files, for large diffs |
 | Agents across systems | One specialist runs as its own service and is called over the A2A protocol |
 | Self-checking | A verifier agent re-reads each finding against the code and drops weak ones |
 | Human in the loop | The run pauses before posting; a person approves, edits or rejects |
@@ -65,7 +65,7 @@ LangChain and LangGraph carry the agents; everything else is ordinary Python. Pi
 | Layer | Use | Why |
 | --- | --- | --- |
 | Agents | `langchain`: `create_agent`, `@tool`, `HumanInTheLoopMiddleware` | The currently documented way to build an agent and to wrap one agent as a tool for another ([tutorial](https://docs.langchain.com/oss/python/langchain/multi-agent/subagents-personal-assistant)) |
-| Orchestration | `langgraph`: `StateGraph`, `Send`, `interrupt`, `Command` | A custom graph for the fixed steps, and `Send` to fan out one worker per file |
+| Orchestration | `langgraph`: `StateGraph`, `Send`, `interrupt`, `Command` | A custom graph for the fixed steps, and `Send` to fan out one sub-agent per batch of files |
 | Checkpoints | `langgraph-checkpoint-sqlite` for development, `langgraph-checkpoint-postgres` when deployed | Pause, resume and crash recovery. Only the outermost graph gets the checkpointer |
 | Models | `init_chat_model` with free hosted models (Gemini API and Groq), chosen per role by a quota-aware router | Small local models are unreliable at tool calls. Keep the model swappable through config. See `docs/model-routing.md` |
 | Output schemas | `pydantic` v2 | Findings are validated; one repair retry on failure |
@@ -180,6 +180,9 @@ The evaluation is the part that separates this from a demo, so treat it as half 
 | Orchestrator calling specialists |  |  |  |  |  |
 | Plus spawned sub-agents on large diffs |  |  |  |  |  |
 | Plus verifier |  |  |  |  |  |
+| Plus orchestrator as judge (optional, instead of the verifier) |  |  |  |  |  |
+
+The last two rows judge the same saved findings, so they compare an independent verifier that re-reads the code finding by finding with the orchestrator re-judging its own team's findings. Run the optional row only if quota allows.
 
 Report small and large diffs separately as well, and the location-only score beside the strict one. If one agent wins, say so: a clear negative result with cost numbers is still a strong portfolio piece.
 
@@ -214,7 +217,9 @@ Multi-Agent-PR-Reviewer/
       specialists.py     bug, security, test reviewers
       orchestrator.py    calls specialists as tools
       subagents.py       batching and Send fan-out of a specialist's sub-agents
-      verifier.py
+      verifier.py        one check per finding, run in parallel with Send
+      judge.py           the orchestrator as judge (optional row 4b)
+      judging.py         verdict schemas, keep-or-drop policy and step result both judges share
     graph.py             StateGraph, Send fan-out, interrupt
     a2a_client.py        calls the remote specialist
     github.py            read PR, post comments

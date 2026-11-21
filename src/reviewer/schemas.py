@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal, Self, get_args
+from typing import Any, Literal, Self, TypedDict, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -80,3 +80,40 @@ class Finding(BaseModel):
         if self.line_end < self.line_start:
             raise ValueError("line_end must be >= line_start")
         return self
+
+
+# --- The review graph's state (stage 4B, decision 0013) -----------------------------------------
+
+type JudgeKind = Literal["verifier", "orchestrator", "none"]
+type ReviewStatus = Literal["complete", "partial", "limit_reached", "quota_paused", "error"]
+
+
+class ReviewState(TypedDict, total=False):
+    """State of the review graph ``START -> review -> judge -> present -> END``.
+
+    Everything is JSON-serializable (findings and results are stored as plain dicts), so a
+    checkpointer can save it after any node (stage 6). The first block is the input; every node
+    returns only its own keys: ``review`` writes ``review_result``, ``findings``, ``status`` and
+    ``notes``; ``judge`` writes ``judge_result``, ``final_findings``, ``status`` and ``notes``;
+    ``present`` writes ``final_findings`` (sorted) and ``approval_payload``. ``Finding`` itself is
+    unchanged: a finding in the state is ``Finding.model_dump(mode="json")``."""
+
+    # input
+    review_key: str  # "<repo or local>#<pr or item id>@<head sha or diff sha256[:12]>"; thread_id
+    pr_title: str
+    pr_body: str
+    workspace: str  # checkout of the repository after the PR
+    diff_path: str
+    sandbox_repo: str | None  # eval/repos.yaml entry whose image run_tests uses
+    security_mode: Literal["local", "remote"] | None  # None: config/review.yaml
+    spawn_enabled: bool
+    judge: JudgeKind
+    evaluation: bool
+    # written by the nodes
+    review_result: dict[str, Any]  # the orchestrator's OrchestratorResult, model_dump(mode="json")
+    findings: list[dict[str, Any]]  # the review's merged findings (after D11 and the merge)
+    judge_result: dict[str, Any] | None  # the judge step's JudgeStepResult, None for "none"
+    final_findings: list[dict[str, Any]]
+    approval_payload: list[dict[str, Any]]
+    status: ReviewStatus
+    notes: list[str]

@@ -40,7 +40,8 @@ class AgentLimits(BaseModel):
 
 class LimitsConfig(BaseModel):
     """``limits.<agent name>``: the stage 1 single agent, the stage 2 specialists, the
-    orchestrator and (stage 4A) a specialist's sub-agent."""
+    orchestrator, (stage 4A) a specialist's sub-agent and (stage 4B) the verifier's per-finding
+    check and the orchestrator-as-judge run."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -50,6 +51,9 @@ class LimitsConfig(BaseModel):
     test_reviewer: AgentLimits
     orchestrator: AgentLimits
     subagent: AgentLimits
+    # Stage 4B (decision 0013): one verification of one finding, and the orchestrator as judge.
+    verifier_per_finding: AgentLimits
+    judge: AgentLimits
 
     def for_agent(self, name: str) -> AgentLimits:
         if name not in type(self).model_fields:
@@ -75,11 +79,20 @@ class A2AConfig(BaseModel):
     security_reviewer: A2AAgentConfig
 
 
+class VerifierConfig(BaseModel):
+    """Stage 4B (decision 0013): how many per-finding verifications run at once."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_concurrency: PositiveInt = 3
+
+
 class ReviewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spawn: SpawnConfig
     limits: LimitsConfig
+    verifier: VerifierConfig = VerifierConfig()
     a2a: A2AConfig = A2AConfig(
         security_reviewer=A2AAgentConfig(mode="local", base_url="http://127.0.0.1:2025")
     )

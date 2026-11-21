@@ -28,7 +28,9 @@ LIMITS = (
     "  test_reviewer:\n    max_model_calls: 20\n    max_tool_calls: 30\n"
     "    max_run_tests_calls: 3\n"
     "  orchestrator:\n    max_model_calls: 8\n    max_tool_calls: 12\n"
-    "  subagent:\n    max_model_calls: 10\n    max_tool_calls: 15\n    max_run_tests_calls: 1\n"
+    "  subagent:\n    max_model_calls: 15\n    max_tool_calls: 20\n    max_run_tests_calls: 1\n"
+    "  verifier_per_finding:\n    max_model_calls: 6\n    max_tool_calls: 8\n"
+    "  judge:\n    max_model_calls: 8\n    max_tool_calls: 12\n"
 )
 
 
@@ -44,8 +46,11 @@ def test_real_file_loads():
     assert cfg.spawn.max_specialist_prompt_tokens == 30000
     assert cfg.spawn == SpawnConfig(**SPAWN_ARGS)  # D12 as changed by decision 0012
     assert cfg.limits.subagent == AgentLimits(
-        max_model_calls=10, max_tool_calls=15, max_run_tests_calls=1
+        max_model_calls=15, max_tool_calls=20, max_run_tests_calls=1
     )
+    assert cfg.limits.verifier_per_finding == AgentLimits(max_model_calls=6, max_tool_calls=8)
+    assert cfg.limits.judge == AgentLimits(max_model_calls=8, max_tool_calls=12)
+    assert cfg.verifier.max_concurrency == 3
     assert cfg.limits.single.max_model_calls == 25
     assert cfg.limits.single.max_tool_calls == 40
     assert cfg.limits.single.max_run_tests_calls is None
@@ -117,7 +122,7 @@ def test_for_agent():
     assert limits.for_agent("single") is limits.single
     assert limits.for_agent("test_reviewer").max_run_tests_calls == 3
     with pytest.raises(KeyError, match="no limits for agent"):
-        limits.for_agent("verifier")
+        limits.for_agent("nobody")
 
 
 def test_missing_specialist_limits_rejected(tmp_path: Path):

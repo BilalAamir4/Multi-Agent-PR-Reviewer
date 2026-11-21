@@ -1,0 +1,71 @@
+{
+  "note": "Stage 4B dev set for the verifier and the orchestrator as judge (decision 0013): four hand-written findings on the dev_pr fixture. Informational only: no test asserts any verdict. 'label' is what the finding really is; the judges never see it. Not part of the evaluation dataset.",
+  "plan": [
+    {"specialist": "bug_reviewer", "called": true, "reason": "Source files in shop/ changed."},
+    {"specialist": "security_reviewer", "called": false, "reason": "No SQL, secrets, shell or untrusted-input handling in the change."},
+    {"specialist": "test_reviewer", "called": true, "reason": "Tests were added and the changed code has tests."}
+  ],
+  "summary": "The change adds percentage coupons to the cart and a page() helper to the catalog, with tests for both.",
+  "entries": [
+    {
+      "label": "real defect (expected.json)",
+      "finding": {
+        "file": "shop/catalog.py",
+        "line_start": 36,
+        "line_end": 36,
+        "category": "off_by_one",
+        "severity": "medium",
+        "confidence": 0.9,
+        "title": "Each page is one product short",
+        "explanation": "page() slices to start + size - 1, so every page holds size - 1 products instead of size.",
+        "evidence": "return products[start : start + size - 1]",
+        "agent": "bug_reviewer"
+      }
+    },
+    {
+      "label": "real defect (expected.json)",
+      "finding": {
+        "file": "shop/cart.py",
+        "line_start": 22,
+        "line_end": 23,
+        "category": "missing_none_check",
+        "severity": "high",
+        "confidence": 0.85,
+        "title": "apply_coupon crashes on an unknown coupon code",
+        "explanation": "CouponBook.find() returns None for an unknown code, but apply_coupon reads coupon.percent without checking, so an unknown code raises AttributeError instead of being ignored as the docstring says.",
+        "evidence": "coupon = self.coupons.find(code)\nif coupon.percent > 0:",
+        "agent": "bug_reviewer"
+      }
+    },
+    {
+      "label": "wrong: the guard is the two lines before",
+      "finding": {
+        "file": "shop/cart.py",
+        "line_start": 18,
+        "line_end": 18,
+        "category": "missing_none_check",
+        "severity": "medium",
+        "confidence": 0.7,
+        "title": "Cart.add stores a sku without checking the product exists",
+        "explanation": "catalog.find(sku) can return None for an unknown sku, and add() goes on to store the sku in self.lines without a None check, so a later subtotal would fail.",
+        "evidence": "self.lines[sku] = self.lines.get(sku, 0) + quantity",
+        "agent": "bug_reviewer"
+      }
+    },
+    {
+      "label": "wrong: the test plainly asserts the behaviour",
+      "finding": {
+        "file": "tests/test_cart.py",
+        "line_start": 29,
+        "line_end": 30,
+        "category": "ineffective_test",
+        "severity": "medium",
+        "confidence": 0.75,
+        "title": "test_coupon_discount never checks the discount",
+        "explanation": "The test applies a coupon but asserts nothing about the resulting total, so it passes even if the coupon has no effect.",
+        "evidence": "assert cart.apply_coupon(\"save10\") is True\nassert cart.total_cents() == 360",
+        "agent": "test_reviewer"
+      }
+    }
+  ]
+}

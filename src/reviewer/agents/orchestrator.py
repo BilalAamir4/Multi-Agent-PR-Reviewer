@@ -31,6 +31,7 @@ from typing import Any, Literal
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.config import merge_configs
 from langchain_core.tools import BaseTool, StructuredTool
 from langsmith.utils import tracing_is_enabled
 from pydantic import BaseModel, ConfigDict, Field
@@ -549,10 +550,13 @@ def orchestrate(
     clock: Callable[[], float] = time.monotonic,
     runner: SpecialistRunner | None = None,
     config: ReviewConfig | None = None,
+    parent_config: RunnableConfig | None = None,
 ) -> OrchestratorResult:
     """Review the pull request in ``ctx`` with the orchestrator and the specialists it calls.
     Never raises for a model, quota or agent failure: those become the result's ``status``.
-    ``runner`` replaces the real specialists (tests); ``clock`` measures ``duration_s``."""
+    ``runner`` replaces the real specialists (tests); ``clock`` measures ``duration_s``;
+    ``parent_config`` is the ``RunnableConfig`` of the graph node that runs the review (stage 4B),
+    so the orchestrator's run is nested in the graph's run in LangSmith."""
     config = config or load_review_config()
     spec = orchestrator_spec(config)
     evaluation = router.evaluation
@@ -599,6 +603,8 @@ def orchestrate(
             },
             "recursion_limit": recursion_limit(spec.limits),
         }
+        if parent_config is not None:
+            run_config = merge_configs(parent_config, run_config)
         try:
             state = agent.invoke({"messages": [HumanMessage(message)]}, config=run_config)
         except Exception as e:

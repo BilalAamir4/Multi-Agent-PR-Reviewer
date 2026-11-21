@@ -20,9 +20,12 @@ def _spawning_off_by_default(monkeypatch):
     true`` and several dev fixtures have 4 or more ``.py`` files, so every place that reads the
     config for a review reads it with spawning switched off here. A test of spawning passes its
     own ``ReviewConfig`` (``tests/test_subagents.py``)."""
+    import reviewer.agents.judge as judge
     import reviewer.agents.orchestrator as orchestrator
     import reviewer.agents.specialists as specialists
+    import reviewer.agents.verifier as verifier
     import reviewer.cli as cli
+    import reviewer.graph as graph
     from a2a_security import graph as service
     from eval import run as eval_run
 
@@ -31,5 +34,5 @@ def _spawning_off_by_default(monkeypatch):
     def spawn_off(path=None):
         return real(path).with_spawn(enabled=False)
 
-    for module in (specialists, orchestrator, cli, service, eval_run):
+    for module in (specialists, orchestrator, cli, service, eval_run, graph, verifier, judge):
         monkeypatch.setattr(module, "load_review_config", spawn_off)

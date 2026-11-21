@@ -48,7 +48,7 @@ inventory/stock.py + tests/test_integration.py`.
 
 ## The sub-agent `S/sub<k>`
 
-- Router role `worker`, limits `limits.subagent` (10 model calls, 15 tool calls, 1 `run_tests`),
+- Router role `worker`, limits `limits.subagent` (15 model calls, 20 tool calls, 1 `run_tests`; raised from 10 and 15 in stage 4B, see the end of this record),
   the **same tools as `S`**. Prompt: `S`'s composed prompt unchanged **plus**
   `prompts/common/subagent_assignment.md` (names the assigned files; takes precedence over "read
   every changed file"). No existing prompt file changed (hashes in `tests/test_subagents.py`).
@@ -154,3 +154,51 @@ the security sub-agent run. No prompt was changed after seeing these results.
   row "Send ... one worker per file") was left as it is.
 - Tokens are estimates (`estimate_tokens`); batches are by files and tokens only, not by
   language-aware analysis.
+
+## Stage 4B limit change (2026-11-22): `limits.subagent` is now 15 model calls, 20 tool calls
+
+`limits.subagent` changed from `max_model_calls: 10`, `max_tool_calls: 15` to **15 and 20**
+(`max_run_tests_calls` stays 1), before stage 5 freezes the numbers. It is a limit, not a prompt,
+so it does not break the identical-spec rule; the specialists' own limits are unchanged. Why:
+
+- The stage 4A end-to-end run on `dev_multi_pr` ended `partial` because `test_reviewer/sub2` hit
+  its 10-call limit (above, "End to end").
+- A 3-file batch (a module, its sibling and a test file) needs one `read_diff` and one `read_file`
+  per file, a `run_tests` and some `search_code` before it can answer, so 10 model calls leave no
+  room for a second look at anything. In the stage 4B re-run (below) the busiest sub-agent,
+  `test_reviewer/sub2`, used 10 model calls and 8 tool calls: exactly the old model-call limit.
+
+## End to end again (stage 4B, Task 0.4)
+
+Run on `dev_multi_pr` after a SQL surface was added to it (`inventory/stock.py:79`, `movements_for()`
+formats `sku` into a query string; `expected.json` lists it, informational), with
+`--agent orchestrator --security-mode remote --sandbox-repo dev_fixture --eval-mode`, spawning on
+(the A2A service running, `127.0.0.1:2025`), the new limits. The orchestrator's plan called **all
+three** specialists; every one spawned 2 sub-agents (batch 1 `inventory/pricing.py` +
+`tests/test_pricing.py`, batch 2 `inventory/reports.py` + `inventory/stock.py` +
+`tests/test_integration.py`); the security sub-agents ran inside the service (`security_reviewer`
+`transport: a2a`, `children` returned over the wire). Status **`complete`**: 66 model calls, 57
+tool calls, 335,673 input / 4,029 output tokens, 25.9 s net (D7), 220.1 s wall-clock waiting
+(821.5 s summed over all waits), 8 per-call `retry_minute` retries. Findings after D11 and the
+merge: `pricing.py:23` (labelled `off_by_one`), `stock.py:25` `off_by_one`, `stock.py:79`
+`sql_injection`. Dropped: duplicate 5, evidence 2, not_assigned 1. The cross-file `reports.py`
+defect was not reported in this run (informational; no prompt changed).
+
+| Agent | Status | Findings | Model calls | Tool calls | Tokens in / out | Net s | Wait s |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| orchestrator (own pass) | complete | - | 6 | 7 | 22606 / 415 | - | - |
+| bug_reviewer (spawned: totals incl. sub-agents) | complete | 3 | 17 | 14 | 75195 / 1515 | 13.7 | 219.9 |
+| &nbsp;&nbsp;bug_reviewer own pass (cross-file) | complete | - | 4 | 3 | 15119 / 614 | 6.1 | 53.1 |
+| &nbsp;&nbsp;bug_reviewer/sub1 | complete | 0 | 5 | 4 | 20121 / 397 | 6.9 | 57.8 |
+| &nbsp;&nbsp;bug_reviewer/sub2 | complete | 1 | 8 | 7 | 39955 / 504 | 9.0 | 109.0 |
+| security_reviewer (spawned: totals incl. sub-agents) | complete | 1 | 13 | 10 | 50516 / 718 | 12.5 | 287.0 |
+| &nbsp;&nbsp;security_reviewer own pass (cross-file) | complete | - | 3 | 2 | 10115 / 242 | 4.5 | 53.0 |
+| &nbsp;&nbsp;security_reviewer/sub1 | complete | 0 | 5 | 4 | 20631 / 166 | 8.5 | 117.0 |
+| &nbsp;&nbsp;security_reviewer/sub2 | complete | 1 | 5 | 4 | 19770 / 310 | 6.7 | 117.0 |
+| test_reviewer (spawned: totals incl. sub-agents) | complete | 1 | 30 | 26 | 187356 / 1381 | 28.7 | 314.7 |
+| &nbsp;&nbsp;test_reviewer own pass (cross-file) | complete | - | 14 | 13 | 102588 / 529 | 20.7 | 92.8 |
+| &nbsp;&nbsp;test_reviewer/sub1 | complete | 0 | 6 | 5 | 27415 / 321 | 7.9 | 115.5 |
+| &nbsp;&nbsp;test_reviewer/sub2 | complete | 1 | 10 | 8 | 57353 / 531 | 18.5 | 106.4 |
+| **total** | complete | 3 | 66 | 57 | 335673 / 4029 | 25.9 (wall waits 220.1) | 821.5 summed |
+
+Trace: LangSmith run `0658f63f-e965-46e8-adb1-8fe0ff5941b6` (project `multi-agent-pr-reviewer`); the key cannot read traces back (401), so only the run ids are recorded.

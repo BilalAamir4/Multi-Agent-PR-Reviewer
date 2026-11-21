@@ -26,7 +26,17 @@ from reviewer.tools.files import _read_text, resolve_repo_path, split_file_lines
 EVIDENCE_TOLERANCE = 3  # lines around [line_start, line_end] that evidence may also cover
 
 # ``not_assigned`` (stage 4A, decision 0012): a sub-agent's finding outside its assigned files.
-type DropReason = Literal["schema", "not_in_diff", "evidence", "duplicate", "not_assigned"]
+# ``verifier_rejected`` and ``judge_rejected`` (stage 4B, decision 0013): the verifier, or the
+# orchestrator as judge, rejected a finding that had passed every check above.
+type DropReason = Literal[
+    "schema",
+    "not_in_diff",
+    "evidence",
+    "duplicate",
+    "not_assigned",
+    "verifier_rejected",
+    "judge_rejected",
+]
 
 CategoryLiteral = Category.__value__  # the plain Literal, so the JSON schema has no $defs
 

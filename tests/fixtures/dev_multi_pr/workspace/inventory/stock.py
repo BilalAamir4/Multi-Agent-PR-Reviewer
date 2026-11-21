@@ -72,3 +72,9 @@ def merge_levels(first, second):
 def sold_out(levels):
     """SKUs whose level is zero or below, in alphabetical order."""
     return sorted(sku for sku, units in levels.items() if units <= 0)
+
+
+def movements_for(conn, sku):
+    """Recorded movements of ``sku`` from the stock database, oldest first."""
+    query = f"SELECT sku, delta FROM movements WHERE sku = '{sku}' ORDER BY id"
+    return conn.execute(query).fetchall()

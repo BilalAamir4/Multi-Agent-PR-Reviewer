@@ -16,6 +16,15 @@ spawn (``should_spawn_for`` on their area) its scored result and run file are co
 with spawning on. Missing ``orchestrator`` results end the run with "run --config orchestrator
 first".
 
+Judging (stage 4B, decision 0013): ``--config verifier`` (row 4) and ``--config judge`` (row 4b,
+optional) read the saved ``eval/results/subagents/`` results (the scored findings, and for
+``judge`` the saved plan and summary), materialize each item's workspace and run **only** the
+judge step on those findings: the verifier (one check per finding) or the orchestrator as judge
+(one run for all findings). Both only keep or drop findings. The scored file holds the kept
+findings; the run file holds the step's calls, tokens and time **and** the cumulative cost (the
+row 3 review plus the step). An item with no saved findings makes no model call. Missing
+``subagents`` results end the run with "run --config subagents first".
+
 Always uses ``QuotaRouter(evaluation=True)``: one pinned model, no fallback (D4). For each item
 it writes
 
@@ -50,17 +59,30 @@ from dotenv import load_dotenv
 
 from eval.ground_truth import DatasetError
 from eval.score import BUCKETS, MODES, score_config
+from reviewer.agents.judge import run_judge
+from reviewer.agents.judging import JudgeStepResult
 from reviewer.agents.orchestrator import OrchestratorResult, orchestrate
 from reviewer.agents.single import ReviewResult, review
 from reviewer.agents.subagents import should_spawn_for
+from reviewer.agents.verifier import run_verifier
 from reviewer.cli import format_reset, item_inputs
 from reviewer.config import ReviewConfig, load_models_config, load_review_config, repo_root
 from reviewer.models import QuotaRouter
+from reviewer.schemas import Finding
 from reviewer.tools import ReviewContext
 
-CONFIGS = ("single", "orchestrator", "subagents")
+CONFIGS = ("single", "orchestrator", "subagents", "verifier", "judge")
 ORCHESTRATED = ("orchestrator", "subagents")  # configurations that run the orchestrator
 REUSE_SOURCE = "orchestrator"  # D6: where "subagents" takes the results of unchanged items from
+# Stage 4B (decision 0013): rows 4 and 4b run only a judge step on the saved ``subagents``
+# findings. ``verifier`` is the verifier agent, ``judge`` the orchestrator as judge.
+JUDGED = ("verifier", "judge")
+JUDGE_SOURCE = "subagents"
+JUDGE_LIMITS = {"verifier": "verifier_per_finding", "judge": "judge"}  # limits.<name>
+JUDGE_PROMPT = {"verifier": "verifier", "judge": "orchestrator"}  # prompts/<name>.md (+ judge.md)
+# What the row 3 review cost, copied into a judged run file and added to the judge step's cost.
+COST_KEYS = ("model_calls", "tool_calls", "input_tokens", "output_tokens", "duration_s",
+             "wait_s_sum", "wait_s_wall", "net_duration_s")  # fmt: skip
 
 # Scoring policy for every configuration (decision 0010). Infrastructure causes say nothing about
 # the architecture, so the item is re-run; every other end state is scored with the findings that
@@ -229,6 +251,108 @@ def _load_run_log(path: Path) -> list[dict[str, Any]]:
     return list(json.loads(path.read_bytes()).get("run_log", []))
 
 
+class MissingSubagentsResults(Exception):
+    """``--config verifier`` and ``--config judge`` need the saved ``subagents`` results."""
+
+
+def saved_subagents(item_id: str, results_root: Path) -> tuple[dict[str, Any], list[Finding]]:
+    """The saved ``subagents`` run file of ``item_id`` and its scored findings (the scored file
+    must exist: an item that was not scored cannot be judged)."""
+    src = results_root / JUDGE_SOURCE
+    run_file, scored = src / "runs" / f"{item_id}.json", src / f"{item_id}.json"
+    if not run_file.is_file() or not scored.is_file():
+        raise MissingSubagentsResults(f"no scored {JUDGE_SOURCE} result for {item_id}")
+    findings = [Finding.model_validate(d) for d in json.loads(scored.read_bytes())["findings"]]
+    return json.loads(run_file.read_bytes()), findings
+
+
+def cumulative_cost(review_cost: dict[str, Any], step: ReviewResult) -> dict[str, float]:
+    """The row 3 review's cost plus the judge step's: calls, tokens, time and waits. The two run
+    one after the other, so every figure is a plain sum (net time included)."""
+    return {k: round((review_cost.get(k) or 0) + (getattr(step, k) or 0), 3) for k in COST_KEYS}
+
+
+def run_judged_item(
+    item_id: str,
+    config: str,
+    router: QuotaRouter,
+    out_dir: Path,
+    reason: str,
+    results_root: Path | None = None,
+) -> JudgeStepResult:
+    """Judge one item's saved ``subagents`` findings (``config`` is ``verifier`` or ``judge``)
+    and write its run file (always) and its scored file (when ``decide_scoring`` says
+    ``scored``). The scored file holds the findings that were kept."""
+    started_at = datetime.now(UTC).isoformat(timespec="seconds")
+    saved, findings = saved_subagents(item_id, results_root or repo_root() / "eval" / "results")
+    ctx, title, _body = item_inputs(item_id)
+    review_config = load_review_config()
+    if config == "verifier":
+        step = run_verifier(ctx, title, findings, router, config=review_config, item_id=item_id)
+    else:
+        step = run_judge(
+            ctx,
+            saved["result"].get("plan", []),
+            saved["result"].get("summary"),
+            findings,
+            router,
+            config=review_config,
+            item_id=item_id,
+        )
+    review_cost = {k: saved["result"].get(k) or 0 for k in COST_KEYS}
+    cumulative = cumulative_cost(review_cost, step)
+    decision, cause = decide_scoring(step)
+    run_path = out_dir / "runs" / f"{item_id}.json"
+    run_log = _load_run_log(run_path)
+    run_log.append(
+        {
+            "started_at": started_at,
+            "reason": reason,
+            "status": step.status,
+            "scoring": {"decision": decision, "cause": cause},
+            "source": JUDGE_SOURCE,
+            "input_findings": step.input_findings,
+            "kept": len(step.findings),
+            "dropped": len(step.dropped),
+            "verdicts": [v.model_dump(mode="json") for v in step.verifications],
+            "retries_by_reason": step.retries_by_reason,
+            "error": step.error,
+            "model_id": step.model_id,
+            "prompt_version": step.prompt_version,
+            "model_calls": step.model_calls,
+            "tool_calls": step.tool_calls,
+            "input_tokens": step.input_tokens,
+            "output_tokens": step.output_tokens,
+            "duration_s": step.duration_s,
+            "wait_s": step.wait_s,
+            "wait_s_wall": step.wait_s_wall,
+            "review_cost": review_cost,
+            "cumulative": cumulative,
+        }
+    )
+    _write_json(
+        run_path,
+        {
+            "result": step.model_dump(mode="json"),
+            "scoring": {"decision": decision, "cause": cause},
+            "source": JUDGE_SOURCE,
+            "review_cost": review_cost,
+            "cumulative": cumulative,
+            "run_log": run_log,
+        },
+    )
+    if decision == "scored":
+        _write_json(
+            out_dir / f"{item_id}.json",
+            {
+                "item_id": item_id,
+                "config": config,
+                "findings": [f.model_dump(mode="json") for f in step.findings],
+            },
+        )
+    return step
+
+
 def run_item(
     item_id: str,
     config: str,
@@ -244,6 +368,8 @@ def run_item(
     specialist would spawn, reuses the saved ``orchestrator`` result instead of reviewing
     (``reuse_orchestrator_result``; ``results_root`` is the folder that holds both
     configurations, default ``eval/results``)."""
+    if config in JUDGED:
+        return run_judged_item(item_id, config, router, out_dir, reason, results_root)
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     ctx, title, body = item_inputs(item_id)
     review_config = review_config_for(config)
@@ -367,13 +493,18 @@ def summary_markdown(
     today: str,
     scoring: tuple[dict[str, dict[str, str]], int, int] | None = None,
     reuse: dict[str, str | None] | None = None,
+    cumulative: dict[str, dict[str, float]] | None = None,
 ) -> str:
     models = load_models_config()
     spec = models.models[models.evaluation.model]
-    limits = load_review_config().limits.for_agent(
-        "orchestrator" if config in ORCHESTRATED else config
+    judged = config in JUDGED
+    limits_name = (
+        JUDGE_LIMITS[config] if judged else "orchestrator" if config in ORCHESTRATED else config
     )
-    prompt_file = "orchestrator" if config in ORCHESTRATED else config
+    limits = load_review_config().limits.for_agent(limits_name)
+    prompt_file = (
+        JUDGE_PROMPT[config] if judged else "orchestrator" if config in ORCHESTRATED else config
+    )
     agg = report["aggregates"]
     results = list(runs.values())
     model_ids = sorted({r.model_id for r in results if r.model_id})
@@ -386,7 +517,8 @@ def summary_markdown(
         f"- Prompt version: {', '.join(f'`{v}`' for v in versions)} (`src/reviewer/prompts/"
         f"{prompt_file}.md`, SHA-256, first 12 hex)",
         f"- Limits: `max_model_calls` {limits.max_model_calls}, `max_tool_calls` "
-        f"{limits.max_tool_calls} (`config/review.yaml` `limits.{config}`)",
+        f"{limits.max_tool_calls} (`config/review.yaml` `limits.{limits_name}`"
+        + (", per finding)" if config == "verifier" else ")"),
         f"- Items: {agg['strict']['all']['items']} ({agg['strict']['all']['clean_items']} clean); "
         f"line tolerance {report['line_tolerance']}",
         "",
@@ -434,7 +566,7 @@ def summary_markdown(
 
     net = [r.net_duration_s for r in results]
     wait = [r.wait_s for r in results]
-    wall = [r.wait_s_wall for r in results if isinstance(r, OrchestratorResult)]
+    wall = [r.wait_s_wall for r in results if isinstance(r, OrchestratorResult | JudgeStepResult)]
     tin = [r.input_tokens for r in results]
     tout = [r.output_tokens for r in results]
     mean_in = statistics.mean(tin) if tin else None
@@ -450,7 +582,7 @@ def summary_markdown(
     dropped_all = Counter(d.reason for r in results for d in r.dropped)
     out += [
         "",
-        "## Cost and time",
+        "## Cost and time" + (" (the judge step alone)" if judged else ""),
         "",
         f"- Median review time with rate-limit waiting removed (D7): {_fmt(_median(net), 1)} s; "
         f"median wait beside it: {_fmt(_median(wait), 1)} s"
@@ -465,12 +597,22 @@ def summary_markdown(
         f"${_fmt(spec.price_output_per_mtok)} per million input / output tokens (D5 estimate; the "
         "free tier was used, so nothing was billed)",
         "",
-        "## Dropped findings (post-processing, decision 0007)",
+        "## Dropped findings ("
+        + (
+            f"by the {'verifier' if config == 'verifier' else 'orchestrator as judge'}, "
+            "decision 0013"
+            if judged
+            else "post-processing, decision 0007"
+        )
+        + ")",
         "",
         "| Reason | Count |",
         "| --- | --- |",
     ]
-    for reason in ("schema", "not_in_diff", "evidence", "duplicate"):
+    reasons = ("schema", "not_in_diff", "evidence", "duplicate")
+    if judged:
+        reasons = ("verifier_rejected" if config == "verifier" else "judge_rejected",)
+    for reason in reasons:
         out.append(f"| {reason} | {dropped_all.get(reason, 0)} |")
     latest, total_runs, rerun_runs = scoring or ({}, 0, 0)
     if not latest:  # no decisions stored: work them out from the results
@@ -492,6 +634,8 @@ def summary_markdown(
     ]
     for (decision, cause), n in sorted(by_cause.items()):
         out.append(f"| {decision} | {cause} | {n} |")
+    if judged:
+        out += judged_markdown(config, results, cumulative or {}, spec)
     if config == "orchestrator":
         out += ["", "Spawning: off (forced for this configuration, decision 0012; row 2)."]
     if config == "subagents":
@@ -510,6 +654,67 @@ def summary_markdown(
     return "\n".join(out) + "\n"
 
 
+def judged_markdown(
+    config: str,
+    results: list[ReviewResult],
+    cumulative: dict[str, dict[str, float]],
+    spec: Any,
+) -> list[str]:
+    """Verdict counts and the cumulative row: the saved row 3 review plus this judge step, which
+    is what the results table reports for rows 4 and 4b (decision 0013)."""
+    verdicts = Counter(
+        v.verdict for r in results if isinstance(r, JudgeStepResult) for v in r.verifications
+    )
+    cum = list(cumulative.values())
+
+    def mean(key: str) -> float | None:
+        return statistics.mean(c[key] for c in cum) if cum else None
+
+    mean_in, mean_out = mean("input_tokens"), mean("output_tokens")
+    cost = None
+    if (
+        mean_in is not None
+        and mean_out is not None
+        and spec.price_input_per_mtok is not None
+        and spec.price_output_per_mtok is not None
+    ):
+        cost = (mean_in * spec.price_input_per_mtok + mean_out * spec.price_output_per_mtok) / 1e6
+    net = [c["net_duration_s"] for c in cum]
+    wall = [c["wait_s_wall"] for c in cum]
+    return [
+        "",
+        f"## Verdicts (`{config}`, decision 0013)",
+        "",
+        "Only `rejected` findings are dropped; `confirmed` and `uncertain` are kept, and a check "
+        "that hit a limit or failed (not for infrastructure reasons) counts as `uncertain`.",
+        "",
+        "| Verdict | Findings |",
+        "| --- | --- |",
+        *(f"| {v} | {verdicts.get(v, 0)} |" for v in ("confirmed", "uncertain", "rejected")),
+        "",
+        f"## Cumulative cost: the saved `{JUDGE_SOURCE}` review plus this step",
+        "",
+        f"- Mean tokens per review: {_fmt(mean_in, 0)} input, {_fmt(mean_out, 0)} output",
+        f"- Mean model calls per review: {_fmt(mean('model_calls'), 1)}; mean tool calls: "
+        f"{_fmt(mean('tool_calls'), 1)}",
+        f"- Estimated cost per review: ${_fmt(cost, 5)} (D5 estimate, free tier, nothing billed)",
+        f"- Median review time with rate-limit waiting removed (D7): {_fmt(_median(net), 1)} s; "
+        f"median wall-clock wait beside it: {_fmt(_median(wall), 1)} s",
+        "- The review and the judge step run one after the other, so each figure is the sum of "
+        "the two.",
+    ]
+
+
+def load_cumulative(out_dir: Path) -> dict[str, dict[str, float]]:
+    """``cumulative`` of each item's run file (judged configurations)."""
+    found: dict[str, dict[str, float]] = {}
+    for p in sorted((out_dir / "runs").glob("item_*.json")):
+        data = json.loads(p.read_bytes())
+        if "cumulative" in data:
+            found[p.stem] = data["cumulative"]
+    return found
+
+
 def load_reuse(out_dir: Path) -> dict[str, str | None]:
     """For each item with a run file: ``"orchestrator"`` when it was reused, else None."""
     return {
@@ -519,7 +724,13 @@ def load_reuse(out_dir: Path) -> dict[str, str | None]:
 
 
 def load_runs(out_dir: Path, config: str = "single") -> dict[str, ReviewResult]:
-    model = OrchestratorResult if config in ORCHESTRATED else ReviewResult
+    model = (
+        OrchestratorResult
+        if config in ORCHESTRATED
+        else JudgeStepResult
+        if config in JUDGED
+        else ReviewResult
+    )
     runs: dict[str, ReviewResult] = {}
     for path in sorted((out_dir / "runs").glob("item_*.json")):
         data = json.loads(path.read_bytes())
@@ -538,6 +749,7 @@ def score_and_summarize(config: str, out_dir: Path, dataset: Path) -> str:
         today,
         load_scoring(out_dir),
         load_reuse(out_dir),
+        load_cumulative(out_dir),
     )
     (out_dir / "summary.md").write_bytes(text.encode("utf-8"))
     return text
@@ -578,6 +790,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 f"error: no scored orchestrator results for {', '.join(missing_src)}: "
                 "run --config orchestrator first",
+                file=sys.stderr,
+            )
+            return 2
+    if args.config in JUDGED:  # the saved subagents results must exist first
+        todo = [i for i in items if args.force or not (out_dir / f"{i}.json").is_file()]
+        missing_src = []
+        for i in todo:
+            try:
+                saved_subagents(i, args.results)
+            except MissingSubagentsResults:
+                missing_src.append(i)
+        if missing_src:
+            print(
+                f"error: no scored {JUDGE_SOURCE} results for {', '.join(missing_src)}: "
+                f"run --config {JUDGE_SOURCE} first",
                 file=sys.stderr,
             )
             return 2
