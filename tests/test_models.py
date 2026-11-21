@@ -29,6 +29,7 @@ from reviewer.models import (
     RateLimiter,
     RetriesExhausted,
     classify,
+    current_wait_log,
     estimate_tokens,
     next_pacific_midnight,
     record_wait,
@@ -536,19 +537,33 @@ def env(tmp_path, monkeypatch):
 
 
 class Script:
-    """A fake agent task: per model, a list of exceptions to raise before succeeding."""
+    """A fake agent task: per model, a list of exceptions to raise before succeeding.
 
-    def __init__(self, plan: dict[str, list]) -> None:
+    Without ``router`` the task makes one model call and does not retry it (an error goes
+    straight to the router). With ``router`` the call goes through the router's per-call retrier,
+    as the real agent's middleware does (decision 0010). ``calls`` records every model call,
+    ``runs`` every run of the task."""
+
+    def __init__(self, plan: dict[str, list], router: QuotaRouter | None = None) -> None:
         self.plan = {m: list(v) for m, v in plan.items()}
+        self.router = router
         self.calls: list[tuple[str, str]] = []
+        self.runs: list[str] = []
 
-    def __call__(self, chat_model, model_id):
+    def _call(self, chat_model, model_id):
         self.calls.append((chat_model, model_id))
         steps = self.plan.get(model_id, [])
         if steps:
             step = steps.pop(0)
             raise step() if callable(step) else step
         return f"review by {model_id}"
+
+    def __call__(self, chat_model, model_id):
+        self.runs.append(model_id)
+        if self.router is None:
+            return self._call(chat_model, model_id)
+        retrier = self.router.call_retrier(model_id, current_wait_log())
+        return retrier.call(lambda: self._call(chat_model, model_id))
 
     @property
     def models(self):
@@ -610,10 +625,12 @@ def test_success_is_tagged_with_its_model(env):
 
 def test_minute_retries_same_model_twice_then_falls_over(env):
     make, tracker, ft, _ = env
-    task = Script({"gemini-3.5-flash-lite": [lambda: gemini_minute(None)] * 3})
+    r = make()
+    task = Script({"gemini-3.5-flash-lite": [lambda: gemini_minute(None)] * 3}, r)
     with review_waits() as wl:
-        res = make().run("specialist", task, 1000)
+        res = r.run("specialist", task, 1000)
     assert task.models == ["gemini-3.5-flash-lite"] * 3 + ["gemini-3.1-flash-lite"]
+    assert task.runs == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]  # re-run on fallback
     assert res.model == "gemini-3.1-flash-lite"
     assert ft.sleeps == [10.0, 20.0]  # 10 x 2^attempt
     assert [(w.model, w.reason, w.seconds) for w in wl.waits] == [
@@ -625,18 +642,20 @@ def test_minute_retries_same_model_twice_then_falls_over(env):
 
 def test_minute_uses_retry_after_capped_at_30(env):
     make, _, ft, _ = env
+    r = make()
     task = Script(
-        {"gemini-3.5-flash-lite": [lambda: gemini_minute("41s"), gemini_input_tokens_minute]}
+        {"gemini-3.5-flash-lite": [lambda: gemini_minute("41s"), gemini_input_tokens_minute]}, r
     )
-    assert make().run("specialist", task, 1000).model == "gemini-3.5-flash-lite"
+    assert r.run("specialist", task, 1000).model == "gemini-3.5-flash-lite"
     assert ft.sleeps == [30.0, 12.0]
 
 
 def test_server_errors_retry_twice_then_fall_over(env):
     make, tracker, ft, _ = env
-    task = Script({"openai/gpt-oss-120b": [lambda: groq_server(503)] * 3})
+    r = make()
+    task = Script({"openai/gpt-oss-120b": [lambda: groq_server(503)] * 3}, r)
     with review_waits() as wl:
-        res = make().run("verifier", task, 1000)
+        res = r.run("verifier", task, 1000)
     assert task.models == ["openai/gpt-oss-120b"] * 3 + ["qwen/qwen3.8-27b"]
     assert res.model == "qwen/qwen3.8-27b"
     assert ft.sleeps == [10.0, 20.0]
@@ -646,8 +665,10 @@ def test_server_errors_retry_twice_then_fall_over(env):
 
 def test_overloaded_then_success_stays_on_model(env):
     make, *_ = env
-    task = Script({"gemini-3.8-flash": [gemini_overloaded]})
-    assert make().run("orchestrator", task, 1000).model == "gemini-3.8-flash"
+    r = make()
+    task = Script({"gemini-3.8-flash": [gemini_overloaded]}, r)
+    assert r.run("orchestrator", task, 1000).model == "gemini-3.8-flash"
+    assert task.runs == ["gemini-3.8-flash"] and len(task.calls) == 2
 
 
 def test_daily_falls_over_at_once_and_persists(env, tmp_path):
@@ -710,14 +731,16 @@ def test_too_big_falls_over_to_a_larger_model(env):
 def test_all_exhausted_lists_every_skip_reason(env):
     make, tracker, *_ = env
     tracker.mark_exhausted("gemini-3.6-flash")
+    r = make()
     task = Script(
         {
             "openai/gpt-oss-120b": [groq_daily_requests],
             "qwen/qwen3.8-27b": [lambda: groq_server(502)] * 3,
-        }
+        },
+        r,
     )
     with pytest.raises(AllExhausted) as e:
-        make().run("verifier", task, 1000)
+        r.run("verifier", task, 1000)
     assert e.value.role == "verifier"
     assert list(e.value.reasons) == ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "gemini-3.6-flash"]
     msg = str(e.value)
@@ -740,7 +763,7 @@ def test_rate_limiter_wait_is_logged(env):
 def test_waits_sum_all_three_reasons(env):
     make, _, ft, _ = env
     r = make()
-    task = Script({"gemini-3.8-flash": [lambda: gemini_minute(None), gemini_overloaded]})
+    task = Script({"gemini-3.8-flash": [lambda: gemini_minute(None), gemini_overloaded]}, r)
     with review_waits() as wl:
         for _ in range(4):
             r.run("orchestrator", Script({}), 100)
@@ -760,7 +783,7 @@ def test_router_waits_in_two_threads_are_separate(env):
     def review(name, err):
         with review_waits() as wl:
             barrier.wait()
-            r.run("verifier", Script({"openai/gpt-oss-120b": [err]}), 100)
+            r.run("verifier", Script({"openai/gpt-oss-120b": [err]}, r), 100)
             out[name] = wl.by_reason()
 
     threads = [
@@ -785,23 +808,25 @@ def test_evaluation_ignores_chains(env):
         assert r.run(role, Script({}), 1000).model == "gemini-3.1-flash-lite"
 
 
-def test_evaluation_retries_five_times_and_never_falls_back(env):
+def test_evaluation_retries_six_times_and_never_falls_back(env):
     make, tracker, ft, _ = env
-    task = Script({"gemini-3.1-flash-lite": [lambda: gemini_minute(None)] * 6})
+    r = make(evaluation=True)
+    task = Script({"gemini-3.1-flash-lite": [lambda: gemini_minute(None)] * 7}, r)
     with pytest.raises(RetriesExhausted) as e:
-        make(evaluation=True).run("specialist", task, 1000)
-    assert task.models == ["gemini-3.1-flash-lite"] * 6
-    assert ft.sleeps == [10.0, 20.0, 30.0, 30.0, 30.0]
-    assert e.value.kind is ErrorKind.MINUTE
+        r.run("specialist", task, 1000)
+    assert task.models == ["gemini-3.1-flash-lite"] * 7 and len(task.runs) == 1
+    assert ft.sleeps == [15.0, 30.0, 60.0, 60.0, 60.0, 60.0]
+    assert e.value.kind is ErrorKind.MINUTE and e.value.retries == 6
     assert tracker.exhausted() == {}
 
 
-def test_evaluation_server_errors_recover_within_five_retries(env):
+def test_evaluation_server_errors_recover_within_six_retries(env):
     make, _, ft, _ = env
-    task = Script({"gemini-3.1-flash-lite": [gemini_overloaded] * 5})
+    r = make(evaluation=True)
+    task = Script({"gemini-3.1-flash-lite": [gemini_overloaded] * 6}, r)
     with review_waits() as wl:
-        res = make(evaluation=True).run("worker", task, 1000)
-    assert res.model == "gemini-3.1-flash-lite" and len(task.calls) == 6
+        res = r.run("worker", task, 1000)
+    assert res.model == "gemini-3.1-flash-lite" and len(task.calls) == 7
     assert {w.reason for w in wl.waits} == {"retry_server"}
 
 
@@ -835,3 +860,22 @@ def test_evaluation_fatal_raises(env):
     task = Script({"gemini-3.1-flash-lite": [schema_error]})
     with pytest.raises(ValidationError):
         make(evaluation=True).run("specialist", task, 1000)
+
+
+# --- The router does not retry a task itself (decision 0010) ---------------------------------
+
+
+@pytest.mark.parametrize("make_err", [lambda: gemini_minute(None), gemini_overloaded])
+def test_router_does_not_rerun_a_task_on_the_same_model(env, make_err):
+    """An error that reaches the router has outlasted the per-call retries: normal mode falls
+    over to the next model at once, evaluation mode raises."""
+    make, tracker, ft, _ = env
+    r = make()
+    task = Script({"gemini-3.5-flash-lite": [make_err]})  # no retrier: the error goes straight up
+    assert r.run("specialist", task, 1000).model == "gemini-3.1-flash-lite"
+    assert task.runs == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    assert ft.sleeps == [] and tracker.exhausted() == {}
+    ev = make(evaluation=True)
+    with pytest.raises(RetriesExhausted):
+        ev.run("specialist", Script({"gemini-3.1-flash-lite": [make_err]}), 1000)
+    assert ft.sleeps == []

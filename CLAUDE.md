@@ -12,6 +12,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
 - Scoring interpretations: `docs/decisions/0002-scoring-details.md`.
 - Per-bug extra accepted kinds: `docs/decisions/0005-per-bug-accepted-kinds.md`.
 - Router errors, retries, resets and wait accounting: `docs/decisions/0006-router-and-waits.md`.
+- Same-model retries per model call (not per task), and the scoring policy for non-complete
+  reviews (`scored` / `rerun_required`): `docs/decisions/0010-per-call-retries.md`.
 - Dataset source repositories, images, eligible commits: `docs/decisions/0004-dataset-source-repos.md`.
 - Post-processing (D11 for every configuration), call limits, the stage 1 baseline:
   `docs/decisions/0007-single-agent-baseline.md`.
@@ -106,6 +108,10 @@ run the model checks in loops.
 - `src/reviewer/models.py`: `QuotaRouter(config, evaluation=False).run(role, task, prompt_tokens)`
   calls `task(chat_model, model_id)` and returns `RouterResult(value, model)`; also `classify`,
   `estimate_tokens`, `review_waits()`, `QuotaTracker` (`quota_state.json`). Decision 0006.
+  Same-model retries are per model call: `QuotaRouter.call_retrier(model_id, wait_log)` gives a
+  `CallRetrier` that `agents/base.py` (`_PerCallRateLimit`) runs around each model call; the router
+  only re-runs a whole task to fall over (S4). Decision 0010. `eval/run.py` `decide_scoring`
+  decides `scored` or `rerun_required` for every configuration (decision 0010).
 - `src/reviewer/agents/output.py`: `FindingDraft`, `ReviewOutput`, `to_findings` (schema,
   not_in_diff, evidence, duplicate; every agent). `src/reviewer/agents/base.py`: `AgentSpec`,
   `run_agent(spec, ctx, user_message, router, *, item_id, evaluation) -> ReviewResult`
@@ -157,8 +163,9 @@ run the model checks in loops.
 | 1B One agent, CLI, evaluation runner, baseline | done (decision 0007) |
 | **Stage 1** | **complete** |
 | 2A Shared agent machinery, `run_tests`, three specialists | done (decision 0008) |
-| 2B Orchestrator calling the specialists, routing test | **2B partial** (decision 0009): docs-only skip passed 2/2; `dev_risky_pr` routed correctly 2/2 (all three specialists called) but never reached `complete` because of Gemini 503s; the complete-run criterion is still open |
-| **Stage 2** | **not complete** until `dev_risky_pr` ends `complete` twice |
+| 2B Orchestrator calling the specialists, routing test | done (decision 0009): docs-only skip passed 2/2 |
+| 2C Per-call retries; finish the routing test; scoring policy | done (decision 0010): `dev_risky_pr` ended `complete` 2/2 with all three specialists called |
+| **Stage 2** | **complete** |
 | 3 A2A | not started |
 | 4 Spawning workers | not started |
 | 5 Evaluation | not started |

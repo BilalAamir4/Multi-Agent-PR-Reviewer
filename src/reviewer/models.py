@@ -6,7 +6,9 @@
 - ``QuotaTracker``: models whose daily quota is gone, persisted to ``quota_state.json`` (S2, S5).
 - ``QuotaRouter``: picks a model per role, runs one whole agent task, retries or falls over.
 
-The router owns all retries: chat models are built with ``max_retries=0``.
+The router owns all retries: chat models are built with ``max_retries=0``. Same-model retries
+(``MINUTE`` and ``SERVER``) happen per model call, inside the agent loop (``CallRetrier``, decision
+0010); the router only re-runs a whole task to fall over to another model (S4).
 """
 
 from __future__ import annotations
@@ -53,10 +55,6 @@ PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnig
 RPM_HEADROOM = 0.9  # rate limiter and TPM check stay under 90% of the published limit
 NULL_RPM_INTERVAL_S = 10.0  # models with rpm: null get one request per 10 seconds
 GROQ_DAILY_RESET = timedelta(hours=24)
-BACKOFF_BASE_S = 10.0
-BACKOFF_CAP_S = 30.0
-NORMAL_RETRIES = 2  # S1: retry the same model at most twice, then fall over
-EVALUATION_RETRIES = 5  # S9: no fallback, so retry longer
 SERVER_STATUS = frozenset({500, 502, 503, 504})
 
 
@@ -334,6 +332,13 @@ class WaitLog:
             out[w.reason] = out.get(w.reason, 0.0) + w.seconds
         return out
 
+    def counts_by_reason(self) -> dict[str, int]:
+        """How many waits of each reason were recorded (children's included)."""
+        out: dict[str, int] = {}
+        for w in self.waits:
+            out[w.reason] = out.get(w.reason, 0) + 1
+        return out
+
     def wall(self) -> float:
         """Seconds during which at least one wait was in progress (union of the intervals)."""
         spans = sorted((w.end - w.seconds, w.end) for w in self.waits if w.seconds > 0)
@@ -569,6 +574,92 @@ def shared_rate_limiter(model: str, rpm: int | None) -> RateLimiter:
         return _shared_limiters[model]
 
 
+# --- Per-call retries (decision 0010) ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Retries of one model call: at most ``max_retries``, each after
+    ``min(retry_after or base_s * 2**n, cap_s)`` seconds."""
+
+    max_retries: int
+    base_s: float
+    cap_s: float
+
+    def delay(self, err: BaseException, retry_number: int) -> float:
+        return min(retry_after_seconds(err) or self.base_s * 2**retry_number, self.cap_s)
+
+
+NORMAL_POLICY = RetryPolicy(max_retries=2, base_s=10.0, cap_s=30.0)  # S1: then fall over
+# Evaluation has no fallback (S9) and D7 removes waits from the reported time, so it waits longer.
+EVALUATION_POLICY = RetryPolicy(max_retries=6, base_s=15.0, cap_s=60.0)
+
+RETRY_ATTR = "reviewer_call_retries"
+
+
+def retries_made(err: BaseException) -> int:
+    """How many same-call retries ``CallRetrier`` made before it let ``err`` through."""
+    return int(getattr(err, RETRY_ATTR, 0) or 0)
+
+
+class CallRetrier:
+    """Re-sends one failed model call to the same model (S1), inside the agent loop.
+
+    ``call(fn)`` runs ``fn`` (one model call, including its rate-limiter wait). On a ``MINUTE`` or
+    ``SERVER`` error it waits, logs the wait as ``retry_minute`` / ``retry_server`` in ``wait_log``
+    and runs ``fn`` again; the agent's message history is untouched, so earlier calls are not
+    repeated. When the retries run out the original error is raised (with the retry count on it,
+    see ``retries_made``) for the router to handle at task level. Every other kind is raised at
+    once, unchanged. ``counts`` is the number of retries made, by reason."""
+
+    def __init__(
+        self,
+        policy: RetryPolicy,
+        model_id: str,
+        wait_log: WaitLog | None,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.policy = policy
+        self.model_id = model_id
+        self.wait_log = wait_log
+        self._clock = clock
+        self._sleep = sleep
+        self.counts: dict[str, int] = {}
+
+    def call[T](self, fn: Callable[[], T]) -> T:
+        retries = 0
+        while True:
+            try:
+                return fn()
+            except Exception as err:
+                kind = classify(err)
+                if kind not in (ErrorKind.MINUTE, ErrorKind.SERVER):
+                    raise
+                if retries >= self.policy.max_retries:
+                    try:
+                        setattr(err, RETRY_ATTR, retries)
+                    except Exception:  # an exception that refuses attributes
+                        pass
+                    raise
+                delay = self.policy.delay(err, retries)
+                why: WaitReason = "retry_minute" if kind is ErrorKind.MINUTE else "retry_server"
+                log.info(
+                    "%s call failed with %s (%s); retry %d in %.1fs",
+                    self.model_id,
+                    kind.name,
+                    str(err)[:120],
+                    retries + 1,
+                    delay,
+                )
+                self._sleep(delay)
+                if self.wait_log is not None:
+                    self.wait_log.record(self.model_id, why, delay, self._clock())
+                self.counts[why] = self.counts.get(why, 0) + 1
+                retries += 1
+
+
 # --- Task 3: the router ----------------------------------------------------------------------
 
 
@@ -671,6 +762,7 @@ class QuotaRouter:
         limiters: Mapping[str, RateLimiter] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         """``tracker`` defaults to the process-wide one. ``limiters=None`` uses the process-wide
         rate limiters; a mapping gives this router its own, and missing ones are created with
@@ -681,6 +773,13 @@ class QuotaRouter:
         self._limiters = dict(limiters) if limiters is not None else None
         self._clock = clock
         self._sleep = sleep
+        self.retry_policy = retry_policy or (EVALUATION_POLICY if evaluation else NORMAL_POLICY)
+
+    def call_retrier(self, model_id: str, wait_log: WaitLog | None) -> CallRetrier:
+        """The per-call retrier for one agent task on ``model_id`` (decision 0010)."""
+        return CallRetrier(
+            self.retry_policy, model_id, wait_log, clock=self._clock, sleep=self._sleep
+        )
 
     # -- choosing a model --
 
@@ -752,18 +851,18 @@ class QuotaRouter:
     def run[T](self, role: str, task: Task[T], prompt_tokens: int) -> RouterResult[T]:
         """Run ``task(chat_model, model_id)``, one whole agent task, on the role's model.
 
-        A failed attempt is never continued on another model: the next model re-runs the whole
-        task from the start (S4). See decision 0006 for the handling of each ``ErrorKind``.
+        The task retries ``MINUTE`` and ``SERVER`` errors per model call itself (``call_retrier``).
+        An error that reaches the router has outlasted those retries: a fallback re-runs the whole
+        task from the start on the next model (S4), never a continuation. See decision 0010.
         """
         if self.evaluation:
             model = self._pick_evaluation(prompt_tokens)
-            value = self._attempt(model, task, prompt_tokens, EVALUATION_RETRIES)
-            return RouterResult(value, model)
+            return RouterResult(self._attempt(model, task, prompt_tokens), model)
         skipped: dict[str, str] = {}
         while True:
             model = self._pick(role, prompt_tokens, skipped)
             try:
-                value = self._attempt(model, task, prompt_tokens, NORMAL_RETRIES)
+                value = self._attempt(model, task, prompt_tokens)
             except _FallOver as fo:
                 skipped[model] = fo.reason
                 log.warning("role %s: falling over from %s: %s", role, model, fo.reason)
@@ -782,39 +881,31 @@ class QuotaRouter:
             if model not in skipped and other is not None and other <= tpm:
                 skipped[model] = f"TPM {other} <= {tpm} of {failed}, which rejected the prompt"
 
-    def _attempt[T](self, model: str, task: Task[T], prompt_tokens: int, max_retries: int) -> T:
+    def _attempt[T](self, model: str, task: Task[T], prompt_tokens: int) -> T:
         chat_model = self.build(model)
-        retries = 0
-        while True:
-            waited = self.limiter(model).acquire()
-            record_wait(model, "rate_limiter", waited, end=self._clock())
-            try:
-                return task(chat_model, model)
-            except Exception as err:
-                kind = classify(err)
-                log.info("%s failed with %s: %s", model, kind.name, err)
-                if kind is ErrorKind.FATAL:
-                    raise
-                if kind is ErrorKind.DAILY:
-                    reset_at = self.tracker.mark_exhausted(model, retry_after_seconds(err))
-                    if self.evaluation:
-                        raise QuotaPaused(model, reset_at) from err
-                    reason = f"DAILY quota hit, exhausted until {reset_at.isoformat()}"
-                    raise _FallOver(reason) from err
-                if kind is ErrorKind.TOO_BIG:
-                    if self.evaluation:
-                        raise PromptTooLarge(model, prompt_tokens, "rejected as too large") from err
-                    reason = "TOO_BIG: the provider rejected the prompt"
-                    raise _FallOver(reason, too_big=True) from err
-                # MINUTE or SERVER
-                if retries >= max_retries:
-                    if self.evaluation:
-                        raise RetriesExhausted(model, kind, retries) from err
-                    reason = f"{kind.name}: still failing after {retries} retries"
-                    raise _FallOver(reason) from err
-                backoff = BACKOFF_BASE_S * 2**retries
-                delay = min(retry_after_seconds(err) or backoff, BACKOFF_CAP_S)
-                why: WaitReason = "retry_minute" if kind is ErrorKind.MINUTE else "retry_server"
-                self._sleep(delay)
-                record_wait(model, why, delay, end=self._clock())
-                retries += 1
+        waited = self.limiter(model).acquire()
+        record_wait(model, "rate_limiter", waited, end=self._clock())
+        try:
+            return task(chat_model, model)
+        except Exception as err:
+            kind = classify(err)
+            log.info("%s failed with %s: %s", model, kind.name, err)
+            if kind is ErrorKind.FATAL:
+                raise
+            if kind is ErrorKind.DAILY:
+                reset_at = self.tracker.mark_exhausted(model, retry_after_seconds(err))
+                if self.evaluation:
+                    raise QuotaPaused(model, reset_at) from err
+                reason = f"DAILY quota hit, exhausted until {reset_at.isoformat()}"
+                raise _FallOver(reason) from err
+            if kind is ErrorKind.TOO_BIG:
+                if self.evaluation:
+                    raise PromptTooLarge(model, prompt_tokens, "rejected as too large") from err
+                reason = "TOO_BIG: the provider rejected the prompt"
+                raise _FallOver(reason, too_big=True) from err
+            # MINUTE or SERVER: the per-call retries are used up.
+            retries = retries_made(err)
+            if self.evaluation:
+                raise RetriesExhausted(model, kind, retries) from err
+            reason = f"{kind.name}: still failing after {retries} retries"
+            raise _FallOver(reason) from err

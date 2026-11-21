@@ -102,6 +102,11 @@ def format_table(result: ReviewResult) -> str:
     return "\n".join(out)
 
 
+def _retries_text(result: ReviewResult) -> str:
+    """Per-call retries (decision 0010), for example ``2 retry_server, 1 retry_minute``."""
+    return ", ".join(f"{n} {k}" for k, n in sorted(result.retries_by_reason.items()))
+
+
 def format_report(result: ReviewResult) -> str:
     lines = [format_table(result), ""]
     status = result.status
@@ -126,6 +131,8 @@ def format_report(result: ReviewResult) -> str:
         f"time:    {result.net_duration_s:.1f}s net, {result.wait_s:.1f}s waiting on rate "
         f"limits, {result.duration_s:.1f}s total",
     ]
+    if result.retries_by_reason:
+        lines.append(f"retries: {_retries_text(result)}")
     if result.langsmith_run_id:
         lines.append(f"trace:   LangSmith run {result.langsmith_run_id}")
     return "\n".join(lines)
@@ -197,6 +204,8 @@ def format_orchestrator_report(result: OrchestratorResult) -> str:
         f"time:    {result.net_duration_s:.1f}s net (total minus wall-clock waits), "
         f"{result.duration_s:.1f}s total",
     ]
+    if result.retries_by_reason:
+        lines.append(f"retries: {_retries_text(result)}")
     if result.langsmith_run_id:
         lines.append(f"trace:   LangSmith run {result.langsmith_run_id}")
     return "\n".join(lines)

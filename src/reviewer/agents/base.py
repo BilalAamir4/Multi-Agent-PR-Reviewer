@@ -47,7 +47,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from reviewer.agents.output import Dropped, ReviewOutput, to_findings
 from reviewer.config import AgentLimits
-from reviewer.models import QuotaPaused, QuotaRouter, RateLimiter, WaitLog, review_waits
+from reviewer.models import (
+    CallRetrier,
+    QuotaPaused,
+    QuotaRouter,
+    RateLimiter,
+    WaitLog,
+    review_waits,
+)
 from reviewer.schemas import Category, Finding
 from reviewer.tools import ALL_TOOLS, REVIEW_TOOLS, ReviewContext, ToolNotes, make_tools
 
@@ -187,6 +194,8 @@ class ReviewResult(BaseModel):
     wait_s: float = 0.0
     net_duration_s: float = 0.0
     waits_by_reason: dict[str, float] = Field(default_factory=dict)
+    # Per-call retries (decision 0010), by wait reason: {"retry_server": 2}. Children's included.
+    retries_by_reason: dict[str, int] = Field(default_factory=dict)
     langsmith_run_id: str | None = None
     attempts: list[Attempt] = Field(default_factory=list)
 
@@ -326,26 +335,42 @@ class _RunTestsLimit(ToolCallLimitMiddleware):
 
 
 class _PerCallRateLimit(AgentMiddleware):
-    """Waits on the model's rate limiter before every model call after the first (the router
-    already waited before starting the task), so a 25-call loop stays under the model's RPM
-    instead of hitting 429s that would re-run the whole task. Waits go to the review's
-    ``WaitLog`` as ``rate_limiter`` (D7)."""
+    """Per-model-call pacing and retries (decision 0010).
 
-    def __init__(self, limiter: RateLimiter, model_id: str, wait_log: WaitLog | None) -> None:
+    Waits on the model's rate limiter before every model call after the first (the router
+    already waited before starting the task), so a 25-call loop stays under the model's RPM.
+    Waits go to the review's ``WaitLog`` as ``rate_limiter`` (D7).
+
+    With a ``retrier``, a ``MINUTE`` or ``SERVER`` error is retried here, on the same model with
+    the same request, so one 503 does not re-run the whole task. The rate limiter runs before every
+    attempt, retries included. The retry lives in this class, not in a second middleware, so the
+    frozen single agent builds the same middleware list as before (``test_single_identical``)."""
+
+    def __init__(
+        self,
+        limiter: RateLimiter,
+        model_id: str,
+        wait_log: WaitLog | None,
+        retrier: CallRetrier | None = None,
+    ) -> None:
         super().__init__()
         self.limiter = limiter
         self.model_id = model_id
         self.wait_log = wait_log
+        self.retrier = retrier
         self._first = True
 
     def wrap_model_call(self, request, handler):  # type: ignore[override]
-        if self._first:
-            self._first = False
-        else:
-            waited = self.limiter.acquire()
-            if self.wait_log is not None and waited > 0:
-                self.wait_log.record(self.model_id, "rate_limiter", waited, self.limiter.now())
-        return handler(request)
+        def attempt():
+            if self._first:
+                self._first = False
+            else:
+                waited = self.limiter.acquire()
+                if self.wait_log is not None and waited > 0:
+                    self.wait_log.record(self.model_id, "rate_limiter", waited, self.limiter.now())
+            return handler(request)
+
+        return attempt() if self.retrier is None else self.retrier.call(attempt)
 
 
 # --- The agent -------------------------------------------------------------------------------
@@ -394,6 +419,12 @@ def recursion_limit(limits: AgentLimits) -> int:
     return 10 * limits.max_model_calls + 20
 
 
+def retry_counts(wait_log: WaitLog) -> dict[str, int]:
+    """Per-call retries recorded in ``wait_log`` by reason (``retry_minute``, ``retry_server``)."""
+    counts = wait_log.counts_by_reason()
+    return {k: counts[k] for k in sorted(counts) if k.startswith("retry_")}
+
+
 def run_agent(
     spec: AgentSpec,
     ctx: ReviewContext,
@@ -427,7 +458,8 @@ def run_agent(
     def task(chat_model: BaseChatModel, model_id: str) -> _Run:
         attempt = Attempt(model=model_id)
         attempts.append(attempt)
-        rate = _PerCallRateLimit(router.limiter(model_id), model_id, wait_log)
+        retrier = router.call_retrier(model_id, wait_log)
+        rate = _PerCallRateLimit(router.limiter(model_id), model_id, wait_log, retrier)
         agent, model_limit, tool_limit = build_agent(spec, chat_model, ctx, notes, [rate])
         run_id = uuid.uuid4()
         if tracing_is_enabled():
@@ -497,6 +529,7 @@ def run_agent(
         duration = clock() - started
         wait = wait_log.total()
         waits_by_reason = wait_log.by_reason()
+        retries = retry_counts(wait_log)
 
     if "model_id" not in out and attempts:
         out["model_id"] = attempts[-1].model
@@ -520,6 +553,7 @@ def run_agent(
         wait_s=round(wait, 3),
         net_duration_s=round(round(duration, 3) - round(wait, 3), 3),
         waits_by_reason={k: round(v, 3) for k, v in sorted(waits_by_reason.items())},
+        retries_by_reason=retries,
         langsmith_run_id=attempts[-1].langsmith_run_id if attempts else None,
         attempts=attempts,
         **out,

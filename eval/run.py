@@ -10,13 +10,18 @@ file also holds its plan and its children's full results, and its ``wait_s_wall`
 Always uses ``QuotaRouter(evaluation=True)``: one pinned model, no fallback (D4). For each item
 it writes
 
-- ``eval/results/<config>/<item_id>.json``: the scorer's input, only when the review is
-  ``complete`` or ``limit_reached`` (a ``limit_reached`` item is scored with no findings);
-- ``eval/results/<config>/runs/<item_id>.json``: the full ``ReviewResult`` and a ``run_log``
-  of every attempt with its reason. The scorer reads only ``item_*.json`` at the top level.
+- ``eval/results/<config>/<item_id>.json``: the scorer's input, only when ``decide_scoring``
+  says ``scored`` (decision 0010, the same for every configuration): the findings that exist are
+  written, an agent that failed contributes nothing;
+- ``eval/results/<config>/runs/<item_id>.json``: the full ``ReviewResult``, the scoring decision
+  and its cause, and a ``run_log`` of every attempt with its reason. The scorer reads only
+  ``item_*.json`` at the top level.
 
-Items with a scored result are skipped unless ``--force`` is given. On ``quota_paused`` the run
-stops with exit code 3. Once every dataset item is scored, ``eval.score`` runs and
+A review that is ``rerun_required`` (quota paused, retries or models exhausted, sandbox
+unavailable) is recorded with its cause, not scored, and makes the run exit non-zero so the item
+is retried later. Items with a scored result are skipped unless ``--force`` is given. On
+``quota_paused`` the run stops with exit code 3. Once every dataset item is scored,
+``eval.score`` runs and
 ``summary.md`` is written. Only ``pr_title`` and ``pr_body`` are read from ``meta.json``.
 """
 
@@ -43,7 +48,60 @@ from reviewer.config import load_models_config, load_review_config, repo_root
 from reviewer.models import QuotaRouter
 
 CONFIGS = ("single", "orchestrator")
-SCORED = ("complete", "limit_reached")
+
+# Scoring policy for every configuration (decision 0010). Infrastructure causes say nothing about
+# the architecture, so the item is re-run; every other end state is scored with the findings that
+# exist (an agent that failed contributes nothing).
+INFRA_ERRORS = frozenset({"RetriesExhausted", "AllExhausted"})
+SANDBOX_NOTE = "sandbox unavailable"
+
+
+def _children(r: ReviewResult) -> list[ReviewResult]:
+    return list(r.children) if isinstance(r, OrchestratorResult) else []
+
+
+def _rerun_cause(r: ReviewResult) -> str | None:
+    """The infrastructure cause in ``r`` or any child, or None."""
+    if r.status == "quota_paused":
+        return "quota_paused"
+    if r.error_class in INFRA_ERRORS:
+        return str(r.error_class)
+    if r.status == "partial" and any(SANDBOX_NOTE in n for n in r.notes):
+        return "sandbox unavailable"
+    for c in _children(r):
+        cause = _rerun_cause(c)
+        if cause:
+            return f"{cause} ({c.agent})"
+    return None
+
+
+def decide_scoring(result: ReviewResult) -> tuple[str, str]:
+    """``("scored" | "rerun_required", cause)`` for one review, the same for every configuration.
+
+    Scored: ``complete``; ``limit_reached``; ``error`` for a non-infrastructure reason (for
+    example ``NoStructuredResponse`` or a fatal model error); ``partial`` where every
+    non-complete child ended ``limit_reached``, a non-infrastructure ``error`` or such a
+    ``partial``. Rerun required: any ``quota_paused``; ``RetriesExhausted`` or ``AllExhausted``
+    anywhere in the review; a ``partial`` caused by ``sandbox unavailable`` (D2b); a ``partial``
+    with no recorded cause."""
+    cause = _rerun_cause(result)
+    if cause is not None:
+        return "rerun_required", cause
+    if result.status in ("complete", "limit_reached"):
+        return "scored", result.status
+    if result.status == "error":
+        return "scored", f"error: {result.error_class or 'unknown'}"
+    if result.status == "partial":
+        bad = [c for c in _children(result) if c.status != "complete"]
+        if not bad:
+            return "rerun_required", "partial: no recorded cause"
+        parts = []
+        for c in bad:
+            if c.status == "partial":  # a partial child with no sandbox note: cause unknown
+                return "rerun_required", f"partial: {c.agent} partial with no recorded cause"
+            parts.append(f"{c.agent} {c.status}")
+        return "scored", "partial: " + ", ".join(parts)
+    return "rerun_required", f"unexpected status {result.status}"
 
 
 def results_dir(config: str, root: Path | None = None) -> Path:
@@ -68,8 +126,8 @@ def _load_run_log(path: Path) -> list[dict[str, Any]]:
 def run_item(
     item_id: str, config: str, router: QuotaRouter, out_dir: Path, reason: str
 ) -> ReviewResult:
-    """Review one item and write its run file (always) and scored file (complete or
-    limit_reached)."""
+    """Review one item and write its run file (always) and its scored file (when
+    ``decide_scoring`` says ``scored``); the decision and its cause go in the run file."""
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     ctx, title, body = item_inputs(item_id)
     if config == "orchestrator":
@@ -86,12 +144,15 @@ def run_item(
             "wait_s_sum": result.wait_s_sum,
             "wait_s_wall": result.wait_s_wall,
         }
+    decision, cause = decide_scoring(result)
     run_log.append(
         {
             **extra,
             "started_at": started_at,
             "reason": reason,
             "status": result.status,
+            "scoring": {"decision": decision, "cause": cause},
+            "retries_by_reason": result.retries_by_reason,
             "error": result.error,
             "model_id": result.model_id,
             "prompt_version": result.prompt_version,
@@ -104,8 +165,15 @@ def run_item(
             "attempts": [a.model_dump(mode="json") for a in result.attempts],
         }
     )
-    _write_json(run_path, {"result": result.model_dump(mode="json"), "run_log": run_log})
-    if result.status in SCORED:
+    _write_json(
+        run_path,
+        {
+            "result": result.model_dump(mode="json"),
+            "scoring": {"decision": decision, "cause": cause},
+            "run_log": run_log,
+        },
+    )
+    if decision == "scored":
         findings = [f.model_dump(mode="json") for f in result.findings]
         _write_json(
             out_dir / f"{item_id}.json",
@@ -125,8 +193,27 @@ def _median(xs: list[float]) -> float | None:
     return statistics.median(xs) if xs else None
 
 
+def load_scoring(out_dir: Path) -> tuple[dict[str, dict[str, str]], int, int]:
+    """The latest scoring decision of each item, and how many recorded runs there were in total
+    and how many of them were ``rerun_required``."""
+    latest: dict[str, dict[str, str]] = {}
+    total = reruns = 0
+    for path in sorted((out_dir / "runs").glob("item_*.json")):
+        data = json.loads(path.read_bytes())
+        if "scoring" in data:
+            latest[path.stem] = data["scoring"]
+        for entry in data.get("run_log", []):
+            total += 1
+            reruns += (entry.get("scoring") or {}).get("decision") == "rerun_required"
+    return latest, total, reruns
+
+
 def summary_markdown(
-    report: dict[str, Any], runs: dict[str, ReviewResult], config: str, today: str
+    report: dict[str, Any],
+    runs: dict[str, ReviewResult],
+    config: str,
+    today: str,
+    scoring: tuple[dict[str, dict[str, str]], int, int] | None = None,
 ) -> str:
     models = load_models_config()
     spec = models.models[models.evaluation.model]
@@ -229,6 +316,26 @@ def summary_markdown(
     ]
     for reason in ("schema", "not_in_diff", "evidence", "duplicate"):
         out.append(f"| {reason} | {dropped_all.get(reason, 0)} |")
+    latest, total_runs, rerun_runs = scoring or ({}, 0, 0)
+    if not latest:  # no decisions stored: work them out from the results
+        latest = {i: dict(zip(("decision", "cause"), decide_scoring(r), strict=True))
+                  for i, r in runs.items()}  # fmt: skip
+    by_decision = Counter(v["decision"] for v in latest.values())
+    by_cause = Counter((v["decision"], v["cause"]) for v in latest.values())
+    out += [
+        "",
+        "## Scoring decisions (decision 0010)",
+        "",
+        f"- Items scored: {by_decision.get('scored', 0)}; "
+        f"items needing a re-run: {by_decision.get('rerun_required', 0)}",
+        f"- Recorded runs: {total_runs}, of which `rerun_required` (not scored, re-run): "
+        f"{rerun_runs}",
+        "",
+        "| Decision | Cause | Items |",
+        "| --- | --- | --- |",
+    ]
+    for (decision, cause), n in sorted(by_cause.items()):
+        out.append(f"| {decision} | {cause} | {n} |")
     return "\n".join(out) + "\n"
 
 
@@ -245,7 +352,9 @@ def score_and_summarize(config: str, out_dir: Path, dataset: Path) -> str:
     report = score_config(dataset, out_dir)
     _write_json(out_dir / "score.json", report)
     today = datetime.now(UTC).date().isoformat()
-    text = summary_markdown(report, load_runs(out_dir, config), config, today)
+    text = summary_markdown(
+        report, load_runs(out_dir, config), config, today, load_scoring(out_dir)
+    )
     (out_dir / "summary.md").write_bytes(text.encode("utf-8"))
     return text
 
@@ -296,8 +405,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             when = format_reset(result.reset_at) if result.reset_at else "unknown"
             print(f"quota paused: {result.model_id} resets at {when}; re-run after that")
             return 3
+        decision, cause = decide_scoring(result)
+        print(f"{item_id}: scoring decision: {decision} ({cause})")
         if result.status == "error":
             print(f"{item_id}: {result.error_class}: {result.error}".splitlines()[0])
+        if decision == "rerun_required":
             failed.append(item_id)
 
     missing = [i for i in all_items if not (out_dir / f"{i}.json").is_file()]

@@ -1,14 +1,15 @@
 # 0009: The orchestrator calls the specialists as tools
 
-Date: Nov 21, 2026 · Status: accepted, **2B partial** (the complete-run criterion is open) · Implements: stage 2B (plan § Build stages, stage 2),
+Date: Nov 21, 2026 (stage 2C results added Nov 22, 2026) · Status: accepted, **stage 2 done** (2B partial, closed by 2C: decision 0010) · Implements: stage 2B (plan § Build stages, stage 2),
 D6, D7, D11, plan § Production concerns (limits), routing doc S4 and S6. Refines D7 for
 parallel runs (does not replace it). Replaces no locked decision.
 
 Stage 2 is done when the orchestrator skips the security specialist on a docs-only change and
-calls all three specialists on a risky one, with a `complete` review. **Status: 2B partial.**
-Docs-only skip: passed 2/2. `dev_risky_pr`: routed correctly 2/2 (all three specialists called)
-but never reached status `complete` because of Gemini 503s, so the complete-run criterion is
-still open. Results are at the end of this record.
+calls all three specialists on a risky one, with a `complete` review. **Status: done (stage 2C).**
+Docs-only skip: passed 2/2 (stage 2B). `dev_risky_pr`: in stage 2B it routed correctly 2/2 but
+never reached `complete` because of Gemini 503s that re-ran whole tasks; after stage 2C moved
+same-model retries to the model call (decision 0010) it ended `complete` 2/2 with all three
+specialists called. Results are at the end of this record.
 
 ## The orchestrator
 
@@ -189,9 +190,45 @@ routing; every failure was the API.
   duration 499.5 s, net 260.7 s.
 - `dev_logic_pr` (informational): **not run, budget** (the fixture exists).
 - Model calls used in the session: about 139 of the 170 allowed (probes included).
-- The stage 2 done criterion is therefore **only half shown**: the skip on a docs-only change is
-  shown twice, the risky review ending `complete` is not shown yet. It must be run (twice) when
-  the API is healthy before stage 2 counts as complete.
+- The stage 2 done criterion was therefore **only half shown** after stage 2B. Stage 2C closes it
+  (next section).
+
+## Stage 2C: `dev_risky_pr` after per-call retries (Nov 22, 2026)
+
+Evaluation mode, `gemini-3.1-flash-lite`, the `dev_fixture` sandbox (`sandbox_spec("dev_fixture")`,
+image `mapr-sandbox-dev_fixture:local`), orchestrator prompt version `4eda79561a8c` (unchanged),
+per-call retries of decision 0010 (6 retries, 15 s base, 60 s cap). One probe call to the model
+before each run (both answered). `dev_docs_pr` was **not re-run**: it passed 2 out of 2 times on
+the same orchestrator prompt in stage 2B, and per-call retries change how a failed call is re-sent,
+not what the orchestrator decides.
+
+| Run | Specialists called | Status | Findings merged (agent: file, category) | Model calls (true) | Tool calls | Tokens in / out (true) | `wait_s_wall` | `wait_s_sum` | Duration | Net | Per-call retries |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | bug, security, test | **complete** | bug: `ledger/report.py` off_by_one; bug: `ledger/store.py` sql_injection; security: `ledger/store.py` hardcoded_secret; test: `tests/test_report.py` ineffective_test x2 | 25 (5 orchestrator, 7 / 6 / 7 specialists) | 23 | 76,215 / 2,262 | 95.3 s | 192.6 s | 123.2 s | 27.9 s | 2 `retry_server` (503 "high demand", 15 s each, both recovered on the first retry, no task re-run) |
+| 2 | bug, security, test | **complete** | the same five | 25 | 23 | 76,215 / 2,262 | 54.7 s | 141.4 s | 77.6 s | 23.0 s | none |
+
+- Both runs ended `complete`, each plan check passed, each specialist ended `complete`, and
+  the orchestrator ran in a single attempt. **The stage 2 done criterion is met.**
+- In run 1 the two 503s would each have re-run a whole task under the stage 2B rules; now each cost
+  one 15 s wait and one repeated call. The waits are in `wait_s_wall` / `wait_s_sum` like all others.
+  The retries were not in the bug or test reviewer (their results show none); the security
+  reviewer's result comes through `run_security_review` and does not carry retry counts, so they
+  were in it or in the orchestrator itself (the review total is 2).
+- The merged review has 5 findings; `dropped` holds 5 `duplicate` entries (the specialists' own
+  and the cross-specialist merge drops).
+- **Accounting defect found, not fixed here.** `model_calls`, `input_tokens` and `output_tokens`
+  of the orchestrator's own counter (`own_*`) include the specialists' calls, which are then added
+  again as children: the result's reported totals (45 model calls, 140,239 in / 4,159 out) and the
+  "orchestrator alone" figures (25 calls, 76,215 / 2,262) are inflated. The table above gives the
+  true figures: the orchestrator's own are `own_*` minus the children's (5 calls, 12,191 in / 365
+  out), and the review total equals the raw `own_*` (25 calls, 76,215 in / 2,262 out). The tool
+  counts are right (`own_tool_calls` 6, children 17). The same inflation is in the stage 2B figures
+  above (61 model calls was really about 34, "orchestrator alone 34" about 7). The unit tests with
+  fake models (`test_child_events_are_not_counted_as_the_orchestrators_own`) pass, and a fake-model
+  parallel check also counts correctly, so the leak only shows with the real Gemini model; its
+  cause is open and should be fixed before stage 5 reports calls and tokens.
+- Model calls used in stage 2C: about 54 of the 90 allowed (2 probes, 25 + 25 review calls, 2
+  failed 503 attempts).
 
 LangSmith trace with the specialists nested under the orchestrator's tool calls
 (`call_bug_reviewer` / `call_security_reviewer` / `call_test_reviewer` each have the

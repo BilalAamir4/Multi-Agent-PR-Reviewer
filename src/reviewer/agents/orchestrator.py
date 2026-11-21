@@ -45,6 +45,7 @@ from reviewer.agents.base import (
     _UsageCounter,
     build_agent,
     recursion_limit,
+    retry_counts,
 )
 from reviewer.agents.output import Dropped, _is_duplicate
 from reviewer.agents.specialists import (
@@ -483,7 +484,8 @@ def orchestrate(
         attempt = Attempt(model=model_id)
         attempts.append(attempt)
         collector.begin_attempt()
-        rate = _PerCallRateLimit(router.limiter(model_id), model_id, collector.wait_log)
+        retrier = router.call_retrier(model_id, collector.wait_log)
+        rate = _PerCallRateLimit(router.limiter(model_id), model_id, collector.wait_log, retrier)
         agent, model_limit, tool_limit = build_agent(
             spec,
             chat_model,
@@ -553,6 +555,7 @@ def orchestrate(
         wait_sum = wait_log.total()
         wait_wall = wait_log.wall()
         waits_by_reason = wait_log.by_reason()
+        retries = retry_counts(wait_log)
 
     children = [collector.results[n] for n in ORDER if n in collector.results]
     status, status_notes = _run_status(
@@ -622,6 +625,7 @@ def orchestrate(
         wait_s_wall=wait_wall,
         net_duration_s=round(duration - wait_wall, 3),
         waits_by_reason={k: round(v, 3) for k, v in sorted(waits_by_reason.items())},
+        retries_by_reason=retries,
         langsmith_run_id=attempts[-1].langsmith_run_id if attempts else None,
         attempts=attempts,
         **out,
