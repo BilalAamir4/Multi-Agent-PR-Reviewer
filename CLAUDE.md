@@ -7,7 +7,7 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
 
 - `docs/plan.md` (plan, stages, Decisions D1 to D12) and `docs/model-routing.md` (model chains,
   quota router). Read both before changing design.
-- D1 to D12 are **locked** (`docs/decisions/0001-locked-decisions.md`). A change needs a new
+- D1 to D12 are **locked** (D6 and D12 are replaced by decision 0012) (`docs/decisions/0001-locked-decisions.md`). A change needs a new
   numbered record in `docs/decisions/` naming the decision it replaces and why.
 - Scoring interpretations: `docs/decisions/0002-scoring-details.md`.
 - Per-bug extra accepted kinds: `docs/decisions/0005-per-bug-accepted-kinds.md`.
@@ -23,6 +23,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   test: `docs/decisions/0009-orchestrator.md`.
 - The security specialist as an A2A service (request/response schema, snapshot transport, parity
   rule, quota state, D7 across processes, limitations): `docs/decisions/0011-a2a-security-service.md`.
+- Specialists spawn sub-agents (stage 4A; replaces D6 and D12; spawn rules, batching, fan-out,
+  merge, scoring, protocol 2, D6 reuse rule, timing result): `docs/decisions/0012-specialist-sub-agents.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -68,8 +70,10 @@ uv run python scripts/run_a2a_security.py --stop    # stop it
 uv run python scripts/check_a2a_parity.py [--probe]  # live parity local vs A2A (spends model calls)
 uv run pytest -q -m integration tests/test_integration_a2a.py  # HTTP path, fake model, port 2026-2028
 uv run reviewer review --agent orchestrator ... --security-mode remote|local   # default: config/review.yaml
+uv run reviewer review --agent bug_reviewer ... [--no-spawn] [--subagent-concurrency N]   # stage 4A; not for single
 uv run python -m eval.run --config single [--items ...] [--force] [--reason TEXT]  # eval + score
-uv run python -m eval.run --config orchestrator ...   # same for the orchestrator; NOT before stage 5
+uv run python -m eval.run --config orchestrator ...   # same for the orchestrator (spawning forced OFF, row 2); NOT before stage 5
+uv run python -m eval.run --config subagents ...      # row 3: D6 reuse of orchestrator results, else spawning on; needs --config orchestrator first
 ```
 
 Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
@@ -109,11 +113,20 @@ run the model checks in loops.
 - The A2A service listens on 127.0.0.1 only and has no authentication (decision 0011). Its model
   fake (`REVIEWER_TEST_FAKE_MODEL`) works only with `REVIEWER_TEST_MODE=1`. `quota_state.a2a.json`,
   `a2a_security/service.pid` and `.log` are gitignored.
+- **Spawning (decision 0012).** `config/review.yaml` `spawn:` and `limits.subagent` hold every
+  spawn number. With `spawn.enabled: false` behaviour is identical to stage 3. Row 2
+  (`--config orchestrator`) runs with spawning off; row 3 (`--config subagents`) applies the D6
+  reuse rule. Sub-agent prompts are the specialist's prompt plus `prompts/common/subagent_assignment.md`;
+  the cross-file pass adds `prompts/common/coordination.md`; the base prompt files stay frozen.
+  The A2A protocol is version 2 (`spawn_enabled` in the request).
 - **Stage 5 runs record the transport** (`security_mode`, `security_transport`,
   `security_transport_detail` in every runs file; `a2a.security_reviewer.mode` in
   `config/review.yaml`). Start the service first when the mode is `remote`.
 
 ## Layout
+
+- `src/reviewer/agents/subagents.py` (spawn decision, batching, `Send` fan-out, cross-file pass),
+  `agents/reports.py` (finding lines, duplicate-rule merge). Fixture `tests/fixtures/dev_multi_pr/`.
 
 - `src/reviewer/schemas.py`: `Finding` schema. `src/reviewer/config.py`: `config/review.yaml`
   (D12 spawn limit) and `config/models.yaml` (`load_models_config`).
@@ -180,7 +193,8 @@ run the model checks in loops.
 | 2C Per-call retries; finish the routing test; scoring policy | done (decision 0010): `dev_risky_pr` ended `complete` 2/2 with all three specialists called |
 | **Stage 2** | **complete** |
 | 3 A2A | done (decision 0011): security specialist as a service; live parity passed on 3 dev fixtures and the remote end-to-end run ended `complete` (only if `docs/a2a-parity.json` and ADR 0011 record both) |
-| 4 Spawning workers | not started |
+| 4A Specialists spawn sub-agents, spawn switch, D6 reuse rule, timing criterion | done (decision 0012): parallel fan-out net 12.1 s vs 25.7 s sequential; orchestrator end-to-end on `dev_multi_pr` ended `partial` (see the ADR) |
+| 4B StateGraph around the review, verifier | not started |
 | 5 Evaluation | not started |
 | 6 Approval and service | not started |
 | 7 Hardening | not started |

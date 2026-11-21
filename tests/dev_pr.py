@@ -11,6 +11,9 @@ None of them is part of the evaluation.
 - ``dev_risky_pr``: SQL, a credential, logic and tests at once (for the stage 2B routing test).
 - ``dev_logic_pr``: a logic-only change with no security surface: a wrong perimeter helper and a
   weak test (stage 2B, informational: does the orchestrator skip the security reviewer?).
+- ``dev_multi_pr``: five ``.py`` files (three source, two test), about 200 changed lines and three
+  defects, one of them across files (stage 4A: a specialist spawns sub-agents on it; its tests
+  pass in the ``dev_fixture`` sandbox).
 """
 
 from __future__ import annotations
@@ -40,6 +43,11 @@ PR_TEXT: dict[str, tuple[str, str]] = {
     "dev_logic_pr": (
         "Add rectangle_perimeter() and average_side()",
         "Adds two geometry helpers and tests for them.",
+    ),
+    "dev_multi_pr": (
+        "Add bulk discounts, stock reports and a catalogue page",
+        "Adds a bulk discount and coupons to pricing, stock movements and restock plans, and "
+        "order, stock and price reports. unit_price() now returns None for an unknown SKU.",
     ),
     "dev_risky_pr": (
         "Add per-account entries, running balances and a nightly sync URL",

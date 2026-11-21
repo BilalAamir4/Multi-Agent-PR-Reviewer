@@ -1,0 +1,369 @@
+diff --git a/inventory/pricing.py b/inventory/pricing.py
+index b269fa5..7400a98 100644
+--- a/inventory/pricing.py
++++ b/inventory/pricing.py
+@@ -4,14 +4,79 @@ PRICES = {
+     "apple": 1.20,
+     "pear": 1.50,
+     "plum": 0.80,
++    "fig": 2.40,
++    "lime": 0.60,
++    "mango": 3.10,
+ }
+ 
++BULK_THRESHOLD = 10  # 10 or more units of one item earn the bulk discount
++BULK_RATE = 0.05
++
+ 
+ def unit_price(sku):
+-    """Price of one unit. Raises KeyError for a SKU that is not in the catalogue."""
+-    return PRICES[sku]
++    """Price of one unit, or None when the SKU is not in the catalogue."""
++    return PRICES.get(sku)
++
++
++def bulk_discount(qty):
++    """Fraction taken off a line: 5% for 10 or more units, nothing below that."""
++    if qty > BULK_THRESHOLD:
++        return BULK_RATE
++    return 0.0
+ 
+ 
+ def line_total(sku, qty):
+-    """Price of ``qty`` units of ``sku``."""
+-    return round(unit_price(sku) * qty, 2)
++    """Price of ``qty`` units of ``sku`` after the bulk discount; 0.0 for an unknown SKU."""
++    price = unit_price(sku)
++    if price is None:
++        return 0.0
++    gross = price * qty
++    return round(gross * (1 - bulk_discount(qty)), 2)
++
++
++def price_list(skus):
++    """Map each SKU to its unit price; an unknown SKU maps to None."""
++    return {sku: unit_price(sku) for sku in skus}
++
++
++def cheapest(skus):
++    """The known SKU with the lowest unit price, or None when none of them is known."""
++    known = {sku: p for sku, p in price_list(skus).items() if p is not None}
++    if not known:
++        return None
++    return min(known, key=known.get)
++
++
++def basket_total(basket):
++    """Total of a basket given as {sku: qty}, bulk discounts included."""
++    return round(sum(line_total(sku, qty) for sku, qty in basket.items()), 2)
++
++
++def describe(sku):
++    """A short label such as ``apple (1.20)``; ``unknown`` for an unknown SKU."""
++    price = unit_price(sku)
++    if price is None:
++        return "unknown"
++    return f"{sku} ({price:.2f})"
++
++
++COUPONS = {"WELCOME5": 5.0, "FRESH10": 10.0}
++
++
++def apply_coupon(total, code):
++    """Take the coupon's fixed amount off ``total``; an unknown code changes nothing."""
++    amount = COUPONS.get(code, 0.0)
++    return round(max(total - amount, 0.0), 2)
++
++
++def price_range(skus):
++    """(lowest, highest) unit price among the known SKUs, or None when none is known."""
++    prices = [p for p in price_list(skus).values() if p is not None]
++    if not prices:
++        return None
++    return (min(prices), max(prices))
++
++
++def price_sheet(skus):
++    """One text line per SKU, using ``describe``."""
++    return "\n".join(describe(sku) for sku in skus)
+diff --git a/inventory/reports.py b/inventory/reports.py
+index 7097ecb..19e186e 100644
+--- a/inventory/reports.py
++++ b/inventory/reports.py
+@@ -1,6 +1,7 @@
+ """Text reports over orders and stock."""
+ 
+ from inventory.pricing import unit_price
++from inventory.stock import low_stock, restock_plan
+ 
+ 
+ def order_rows(order):
+@@ -13,7 +14,7 @@ def order_rows(order):
+             price = unit_price(sku)
+         except KeyError:
+             continue  # unknown items are skipped
+-        rows.append((sku, qty, price, price * qty))
++        rows.append((sku, qty, price, round(price * qty, 2)))
+     return rows
+ 
+ 
+@@ -22,3 +23,38 @@ def format_rows(rows):
+     for sku, qty, price, total in rows:
+         lines.append(f"{sku:<8}{qty:>4} x {price:>6.2f} = {total:>8.2f}")
+     return "\n".join(lines)
++
++
++def order_report(order):
++    """The order as text, with a total line."""
++    rows = order_rows(order)
++    total = round(sum(r[3] for r in rows), 2)
++    body = format_rows(rows)
++    return f"{body}\ntotal {total:.2f}" if body else "no known items"
++
++
++def stock_report(levels, threshold):
++    """One line per SKU below ``threshold``, with the units to reorder."""
++    plan = restock_plan(levels, threshold)
++    lines = [f"{sku}: order {plan[sku]}" for sku in low_stock(levels, threshold)]
++    return "\n".join(lines) if lines else "stock is fine"
++
++
++def top_items(order, n):
++    """The ``n`` lines of ``order`` with the highest totals, highest first."""
++    rows = sorted(order_rows(order), key=lambda r: r[3], reverse=True)
++    return rows[:n]
++
++
++def movement_report(history, n):
++    """The last ``n`` movements as text, oldest first."""
++    from inventory.stock import last_movements
++
++    lines = [f"{m['sku']}: {m['delta']:+d}" for m in last_movements(history, n)]
++    return "\n".join(lines) if lines else "no movements"
++
++
++def price_sheet(skus):
++    """A catalogue page for ``skus``: one row per known SKU, cheapest first."""
++    rows = sorted(order_rows({sku: 1 for sku in skus}), key=lambda r: (r[2], r[0]))
++    return format_rows(rows)
+diff --git a/inventory/stock.py b/inventory/stock.py
+index 46ce949..84324ba 100644
+--- a/inventory/stock.py
++++ b/inventory/stock.py
+@@ -10,3 +10,65 @@ def apply_movement(levels, sku, delta):
+ def level(levels, sku):
+     """Units of ``sku`` in stock; zero for an item never seen."""
+     return levels.get(sku, 0)
++
++
++def record(history, sku, delta):
++    """Append one movement to ``history`` and return it."""
++    history.append({"sku": sku, "delta": delta})
++    return history
++
++
++def last_movements(history, n):
++    """The ``n`` most recent movements, oldest first."""
++    if n <= 0:
++        return []
++    return history[len(history) - n + 1 :]
++
++
++def low_stock(levels, threshold):
++    """SKUs whose level is below ``threshold``, in alphabetical order."""
++    return sorted(sku for sku, units in levels.items() if units < threshold)
++
++
++def restock_plan(levels, target):
++    """Units to order per SKU so every level reaches ``target``; only SKUs below it appear."""
++    plan = {}
++    for sku, units in levels.items():
++        if units < target:
++            plan[sku] = target - units
++    return plan
++
++
++def net_change(history, sku):
++    """Sum of the movements of one SKU."""
++    return sum(m["delta"] for m in history if m["sku"] == sku)
++
++
++def replay(history):
++    """Rebuild the stock levels from a movement history."""
++    levels = {}
++    for m in history:
++        apply_movement(levels, m["sku"], m["delta"])
++    return levels
++
++
++def most_moved(history, n=3):
++    """The ``n`` SKUs with the most units moved in either direction, busiest first."""
++    moved = {}
++    for m in history:
++        moved[m["sku"]] = moved.get(m["sku"], 0) + abs(m["delta"])
++    ranked = sorted(moved, key=lambda sku: (-moved[sku], sku))
++    return ranked[:n]
++
++
++def merge_levels(first, second):
++    """Combine two stock tables by adding the levels of SKUs present in both."""
++    merged = dict(first)
++    for sku, units in second.items():
++        merged[sku] = merged.get(sku, 0) + units
++    return merged
++
++
++def sold_out(levels):
++    """SKUs whose level is zero or below, in alphabetical order."""
++    return sorted(sku for sku, units in levels.items() if units <= 0)
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+new file mode 100644
+index 0000000..928f265
+--- /dev/null
++++ b/tests/test_integration.py
+@@ -0,0 +1,67 @@
++from inventory.reports import format_rows, order_report, order_rows, stock_report, top_items
++from inventory.stock import (
++    apply_movement,
++    last_movements,
++    level,
++    low_stock,
++    net_change,
++    record,
++    replay,
++    restock_plan,
++)
++
++
++def test_order_rows_for_known_items():
++    rows = order_rows({"apple": 2, "pear": 1})
++    assert rows == [("apple", 2, 1.20, 2.4), ("pear", 1, 1.50, 1.5)]
++
++
++def test_format_rows():
++    text = format_rows([("apple", 2, 1.20, 2.4)])
++    assert text == "apple      2 x   1.20 =     2.40"
++
++
++def test_order_report_has_a_total():
++    assert order_report({"apple": 2, "pear": 2}).endswith("total 5.40")
++
++
++def test_top_items_orders_by_total():
++    assert [r[0] for r in top_items({"apple": 1, "mango": 2, "plum": 1}, 2)] == ["mango", "apple"]
++
++
++def test_stock_flow():
++    levels = {}
++    history = []
++    for sku, delta in [("apple", 10), ("pear", 4), ("apple", -7)]:
++        apply_movement(levels, sku, delta)
++        record(history, sku, delta)
++    assert level(levels, "apple") == 3
++    assert low_stock(levels, 5) == ["apple", "pear"]
++    assert restock_plan(levels, 5) == {"apple": 2, "pear": 1}
++    assert net_change(history, "apple") == 3
++    assert replay(history) == levels
++    assert stock_report(levels, 5) == "apple: order 2\npear: order 1"
++
++
++def test_no_movements_to_show():
++    assert last_movements([], 0) == []
++
++
++def test_price_sheet_is_cheapest_first():
++    from inventory.reports import price_sheet
++
++    first = price_sheet(["fig", "lime"]).splitlines()[0]
++    assert first.startswith("lime")
++
++
++def test_most_moved_and_merge():
++    from inventory.stock import merge_levels, most_moved, sold_out
++
++    history = [
++        {"sku": "apple", "delta": 5},
++        {"sku": "pear", "delta": -2},
++        {"sku": "apple", "delta": -1},
++    ]
++    assert most_moved(history, 1) == ["apple"]
++    assert merge_levels({"apple": 1}, {"apple": 2, "pear": 3}) == {"apple": 3, "pear": 3}
++    assert sold_out({"apple": 0, "pear": 4}) == ["apple"]
+diff --git a/tests/test_pricing.py b/tests/test_pricing.py
+index 04604c5..7c8371b 100644
+--- a/tests/test_pricing.py
++++ b/tests/test_pricing.py
+@@ -1,16 +1,67 @@
+-import pytest
+-
+-from inventory.pricing import line_total, unit_price
++from inventory.pricing import (
++    basket_total,
++    bulk_discount,
++    cheapest,
++    describe,
++    line_total,
++    price_list,
++    unit_price,
++)
+ 
+ 
+ def test_unit_price_of_a_known_item():
+     assert unit_price("apple") == 1.20
+ 
+ 
+-def test_unknown_item_raises():
+-    with pytest.raises(KeyError):
+-        unit_price("durian")
++def test_unknown_item_has_no_price():
++    assert unit_price("durian") is None
+ 
+ 
+ def test_line_total():
+     assert line_total("pear", 4) == 6.0
++
++
++def test_unknown_line_is_free():
++    assert line_total("durian", 3) == 0.0
++
++
++def test_bulk_discount_applies_to_a_big_order():
++    assert bulk_discount(20) == 0.05
++    assert line_total("apple", 20) == 22.8
++
++
++def test_no_bulk_discount_for_a_small_order():
++    assert bulk_discount(3) == 0.0
++
++
++def test_price_list_marks_unknown_items():
++    assert price_list(["fig", "durian"]) == {"fig": 2.40, "durian": None}
++
++
++def test_cheapest_known_item():
++    assert cheapest(["fig", "lime", "durian"]) == "lime"
++    assert cheapest(["durian"]) is None
++
++
++def test_basket_total():
++    assert basket_total({"apple": 2, "plum": 5}) == 6.4
++
++
++def test_describe():
++    assert describe("fig") == "fig (2.40)"
++    assert describe("durian") == "unknown"
++
++
++def test_coupons():
++    from inventory.pricing import apply_coupon
++
++    assert apply_coupon(20.0, "FRESH10") == 10.0
++    assert apply_coupon(3.0, "WELCOME5") == 0.0
++    assert apply_coupon(20.0, "NOPE") == 20.0
++
++
++def test_price_range():
++    from inventory.pricing import price_range
++
++    assert price_range(["fig", "lime", "durian"]) == (0.60, 2.40)
++    assert price_range(["durian"]) is None

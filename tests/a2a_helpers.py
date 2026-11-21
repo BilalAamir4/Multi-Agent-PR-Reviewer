@@ -65,15 +65,43 @@ def request_for(ctx: ReviewContext) -> dict[str, Any]:
         "pr_body": body,
         "focus": FOCUS,
         "evaluation": True,
+        "spawn_enabled": False,
     }
 
 
+TIMING_KEYS = frozenset({
+    "duration_s", "wait_s", "net_duration_s", "wait_s_sum", "wait_s_wall", "start_s", "end_s",
+    "wall_s", "net_s", "waits_by_reason", "wait_intervals", "langsmith_run_id",
+})  # fmt: skip
+
+
+def _strip(value: Any) -> Any:
+    """``value`` without the timing and wait fields at any depth (children, spawn records)."""
+    if isinstance(value, dict):
+        return {k: _strip(v) for k, v in value.items() if k not in TIMING_KEYS}
+    if isinstance(value, list):
+        return [_strip(v) for v in value]
+    return value
+
+
 def comparable(response: dict[str, Any]) -> dict[str, Any]:
-    """``response`` without the service block, the timings, the waits and the PIDs."""
+    """``response`` without the service block, the timings, the waits and the PIDs, at any depth."""
     out = {k: v for k, v in response.items() if k not in ("service", "transport")}
-    out = json.loads(json.dumps(out))  # a copy, plain JSON
+    out = _strip(json.loads(json.dumps(out)))  # a copy, plain JSON
     for key in TIMING_COUNTS:
         out["counts"].pop(key, None)
-    out["waits_by_reason"] = {}
-    out["wait_intervals"] = []
+    return out
+
+
+def spawn_script(ctx: ReviewContext, subagents: int = 2) -> list[dict[str, Any]]:
+    """Scripted answers for a spawning security review run one sub-agent at a time: each sub-agent
+    lists the files and answers (sub-agent ``k`` reports the ``k``-th expected defect), then the
+    specialist's cross-file pass answers with nothing."""
+    out: list[dict[str, Any]] = []
+    for k in range(subagents):
+        answer = {"summary": f"batch {k + 1}", "findings": [finding(ctx, k)]}
+        out.append({"tool_calls": [{"name": "list_changed_files", "args": {}, "id": f"s{k}a"}]})
+        out.append({"tool_calls": [{"name": "ReviewOutput", "args": answer, "id": f"s{k}b"}]})
+    cross = {"summary": "cross-file pass", "findings": []}
+    out.append({"tool_calls": [{"name": "ReviewOutput", "args": cross, "id": "x1"}]})
     return out

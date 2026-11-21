@@ -1,7 +1,14 @@
-# D12: spawn one worker per .py file when either limit is reached. Fixed during evaluation.
+# D12 (changed Nov 22, 2026, decision 0012): each specialist spawns sub-agents over batches of its
+# own .py files when either limit is reached. Fixed during evaluation. `enabled` is the switch the
+# CLI's --no-spawn and eval.run (`--config orchestrator` forces it off) use; everything else is D12.
 spawn:
+  enabled: true
   min_py_files: 4
   max_specialist_prompt_tokens: 30000
+  max_files_per_subagent: 3
+  max_subagents: 5
+  max_concurrency: 3            # sub-agents running at once, per specialist
+  batch_token_budget: 20000     # estimated tokens per batch (numbered diff + file contents)
 # Per-agent limits. Reaching max_model_calls or max_tool_calls ends the review cleanly as
 # limit_reached (decision 0007). max_run_tests_calls caps run_tests on its own; past it the tool
 # is refused and the review goes on (decision 0008).
@@ -25,6 +32,12 @@ limits:
   orchestrator:
     max_model_calls: 8
     max_tool_calls: 12
+  # One sub-agent of a specialist (stage 4A, decision 0012); run_tests, where the specialist has
+  # it, is limited to one call.
+  subagent:
+    max_model_calls: 10
+    max_tool_calls: 15
+    max_run_tests_calls: 1
 # Stage 3 (decision 0011): where the orchestrator runs each specialist that has its own service.
 # mode local: in this process (run_security_review). mode remote: over A2A at base_url
 # (`uv run python scripts/run_a2a_security.py` starts the service). The CLI's --security-mode

@@ -43,21 +43,20 @@ flowchart TD
         SEC["Security reviewer<br/>own service, reached over A2A"]
         TST["Test reviewer<br/>runs the tests in a sandbox"]
     end
-    SPEC -->|only when the diff is large| WORK
-    subgraph WORK["Spawned: one temporary worker per file, gone when it returns"]
-        W1["Worker for file 1"]
-        W2["Worker for file 2"]
-        W3["Worker for file 3"]
-        WN["as many as needed"]
-    end
-    WORK -->|all findings, merged| VER["Verifier<br/>removes weak findings"]
+    BUG -->|only when its share is large| BSUB["Spawned: bug sub-agents<br/>2 to 3 files each"]
+    SEC -->|only when its share is large| SSUB["Spawned: security sub-agents<br/>inside the A2A service"]
+    TST -->|only when its share is large| TSUB["Spawned: test sub-agents"]
+    BSUB -->|report back| BUG
+    SSUB -->|report back| SEC
+    TSUB -->|report back| TST
+    SPEC -->|all findings, merged| VER["Verifier<br/>removes weak findings"]
     VER --> HUM["Human approval<br/>approve, edit or reject"]
     HUM --> POST["Post review comments<br/>on the pull request"]
     classDef decision stroke-width:3px
     class ORCH,HUM decision
 ```
 
-The orchestrator always calls specialists, and spawns per-file workers only above the size limit in decision D12. The two accented boxes are where decisions are made: the orchestrator plans, and a person approves before anything is posted.
+The orchestrator always calls specialists. A specialist spawns sub-agents only when its own files are above the limit in decision D12; its sub-agents report back to it, and it adds findings that span files before reporting to the orchestrator. The two accented boxes are where decisions are made: the orchestrator plans, and a person approves before anything is posted.
 
 ## Stack
 
@@ -99,7 +98,7 @@ Locked Nov 19, 2026. To change one, write a new record in `docs/decisions/` that
 | --- | --- | --- |
 | D4 | Models during evaluation | **One model for every role: Gemini 3.1 Flash Lite.** The comparison is between architectures, so the model is held fixed. This replaces "one model per role" in scenario S9 of the routing doc. Per-role chains, including a different model family for the verifier, are for normal runs; one extra run with normal chains reports real cost |
 | D5 | Budget | First round on the free tier: **20 PRs** (14 with planted bugs, 6 clean; about half with 8 or more files, 3 to 4 with 4 to 6 files, the rest with 1 to 2), **one run per configuration**. `eval/run.py` switches to a paid key through config only. Pay for the full 40 PRs × 3 runs only if configurations come out close. Rough estimate for that: $40 to $80 at about $0.25 / $1.50 per million input / output tokens; check the price in the console first |
-| D6 | Reuse between configurations | "Plus spawned workers" runs only on diffs above the spawn limit; smaller diffs reuse the "orchestrator calling specialists" results. "Plus verifier" is the verifier run on the saved findings of "plus spawned workers", not a full new review |
+| D6 | Reuse between configurations | "Plus spawned sub-agents" re-runs only the diffs where at least one called specialist reaches the D12 limit; on every other diff no sub-agent would spawn, so it reuses the "orchestrator calling specialists" results unchanged. "Plus verifier" is the verifier run on the saved findings of "plus spawned sub-agents", not a full new review (changed Nov 22, 2026) |
 | D7 | Timing | The router logs time spent waiting on rate limits separately. Review time is reported with that waiting removed, and the waiting reported beside it |
 
 ### Findings and scoring
@@ -113,7 +112,7 @@ Locked Nov 19, 2026. To change one, write a new record in `docs/decisions/` that
 | D9b | Unplanted real bugs | Primary precision counts every unmatched finding as a false alarm. A blind manual check of unmatched findings, with the configuration hidden, gives an **adjusted precision** as a secondary number |
 | D10 | Severity and confidence | Severity is `high` (wrong result, crash or security hole on a normal path), `medium` (fails on an edge case or weakens a test) or `low` (unlikely to cause a failure). Confidence is a number from 0 to 1. Neither is scored; they order comments and set thresholds |
 | D11 | Evidence check | `evidence` must be code quoted exactly from the file. Before the verifier runs, code checks that the snippet exists at the stated lines and drops the finding if it does not |
-| D12 | Spawn limit | Workers are spawned when **4 or more `.py` files** change, **or** the estimated specialist prompt is over **about 30K tokens**. Non-Python files never get a worker. Both numbers are in `config/` and fixed during evaluation |
+| D12 | Spawn limit | **Each specialist** spawns sub-agents when its own `.py` files number **4 or more**, **or** its estimated prompt is over **about 30K tokens**; code makes the decision, not the model. Files are grouped in batches of up to 3, keeping related files together (a module with its test, files in the same folder), with at most 5 sub-agents per specialist and 3 running at once. A sub-agent may read any file but reports only on its assigned files. The specialist keeps every sub-agent finding and adds its own cross-file findings; only the verifier drops findings. Every finding records who found it (for example `bug_reviewer/sub2`). Non-Python files never get a sub-agent. All numbers are in `config/` and fixed during evaluation (changed Nov 22, 2026 from one orchestrator-level worker per file) |
 
 ### The `Finding` schema
 
@@ -151,7 +150,7 @@ Eight stages, each ending in something that runs and a test that says it is done
 | 1. One agent | A single `create_agent` reviewer with tools: read diff, read file, search code, run `ruff` and `bandit`. A CLI that reviews a local diff | It reviews 5 dataset items end to end and its score is recorded as the baseline | 1 week |
 | 2. Calling specialists | Three specialist agents (bugs, security, tests), each wrapped as a `@tool`. The test specialist runs `pytest` in the sandbox. An orchestrator agent that picks which to call and merges their findings | The orchestrator skips the security specialist on a docs-only change and calls all three on a risky one | 1 week |
 | 3. A2A | The security specialist deployed on LangGraph Agent Server (`langgraph dev` locally) and called over A2A by the orchestrator, with the local version kept behind a config switch | The orchestrator gets the same findings from the remote specialist as from the local one on 3 dataset items | 1 week |
-| 4. Spawning workers | A `StateGraph` around the agents. Above the D12 limit, `Send` fans out one worker per file, each with only that file's context. A verifier agent filters the merged findings | A 4 to 5 file diff runs workers in parallel and finishes faster than the same diff run in sequence, with rate-limit waiting reported separately (D7) | 1 week |
+| 4. Spawning sub-agents | Above the D12 limit, each specialist fans out sub-agents over batches of its files with `Send` and merges their reports with its own cross-file pass; the security service spawns its own inside A2A. Then a `StateGraph` around the whole review, with a verifier agent that filters the merged findings | A 4 to 5 file diff runs a specialist's sub-agents in parallel and finishes faster than the same diff run in sequence, with rate-limit waiting reported separately (D7) | 1 week |
 | 5. Evaluation | The 20-PR dataset, the scorer, and one LangSmith experiment per configuration, with D4 to D7 applied | The results table in the Evaluation section is filled from real runs | 1 week |
 | 6. Approval and service | `interrupt` before posting, a checkpointer, a FastAPI webhook, comments posted to a real pull request on a test repository | You approve one finding and reject another on a real PR; killing the process mid-review and restarting resumes it | 1 week |
 | 7. Hardening | Injection tests. Step, cost and time limits. README and write-up | A diff containing planted instructions does not change the verdict, and every limit ends a review with a clear partial result | 1 week |
@@ -179,7 +178,7 @@ The evaluation is the part that separates this from a demo, so treat it as half 
 | --- | --- | --- | --- | --- | --- |
 | One agent |  |  |  |  |  |
 | Orchestrator calling specialists |  |  |  |  |  |
-| Plus spawned workers on large diffs |  |  |  |  |  |
+| Plus spawned sub-agents on large diffs |  |  |  |  |  |
 | Plus verifier |  |  |  |  |  |
 
 Report small and large diffs separately as well, and the location-only score beside the strict one. If one agent wins, say so: a clear negative result with cost numbers is still a strong portfolio piece.
@@ -214,7 +213,7 @@ Multi-Agent-PR-Reviewer/
       single.py          stage 1 baseline
       specialists.py     bug, security, test reviewers
       orchestrator.py    calls specialists as tools
-      worker.py          per-file worker
+      subagents.py       batching and Send fan-out of a specialist's sub-agents
       verifier.py
     graph.py             StateGraph, Send fan-out, interrupt
     a2a_client.py        calls the remote specialist

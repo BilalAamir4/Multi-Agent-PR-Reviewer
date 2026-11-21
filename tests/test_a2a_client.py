@@ -116,7 +116,7 @@ def _fresh_cache():
 
 def call_it(ctx, server, **kw):
     args = dict(pr_title=TITLE, pr_body=BODY, focus="look at the store", evaluation=True,
-                base_url=BASE, transport=server.transport)  # fmt: skip
+                spawn_enabled=False, base_url=BASE, transport=server.transport)  # fmt: skip
     args.update(kw)
     return call_remote_security(ctx, **args)
 
@@ -138,7 +138,7 @@ def test_request_is_one_jsonrpc_message_send_with_a_json_text_part(ctx):
     part = msg["parts"][0]
     assert part["kind"] == "text"
     sent = SecurityReviewRequest.model_validate_json(part["text"])
-    assert (sent.protocol_version, sent.pr_title, sent.focus) == ("1", TITLE, "look at the store")
+    assert (sent.protocol_version, sent.pr_title, sent.focus) == ("2", TITLE, "look at the store")
     assert sent.diff_text == ctx.diff_text and sent.evaluation is True and sent.trace_parent is None
     assert sha256_hex(sent.archive_bytes()) == sent.workspace_sha256
     assert out["transport"]["request_bytes"] == len(req.content)

@@ -11,7 +11,15 @@ from reviewer.config import (
     should_spawn,
 )
 
-SPAWN = "spawn:\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\n"
+SPAWN = (
+    "spawn:\n  enabled: true\n  min_py_files: 4\n  max_specialist_prompt_tokens: 30000\n"
+    "  max_files_per_subagent: 3\n  max_subagents: 5\n  max_concurrency: 3\n"
+    "  batch_token_budget: 20000\n"
+)
+SPAWN_ARGS = dict(
+    enabled=True, min_py_files=4, max_specialist_prompt_tokens=30000, max_files_per_subagent=3,
+    max_subagents=5, max_concurrency=3, batch_token_budget=20000,
+)  # fmt: skip
 LIMITS = (
     "limits:\n"
     "  single:\n    max_model_calls: 25\n    max_tool_calls: 40\n"
@@ -20,6 +28,7 @@ LIMITS = (
     "  test_reviewer:\n    max_model_calls: 20\n    max_tool_calls: 30\n"
     "    max_run_tests_calls: 3\n"
     "  orchestrator:\n    max_model_calls: 8\n    max_tool_calls: 12\n"
+    "  subagent:\n    max_model_calls: 10\n    max_tool_calls: 15\n    max_run_tests_calls: 1\n"
 )
 
 
@@ -33,6 +42,10 @@ def test_real_file_loads():
     cfg = load_review_config()
     assert cfg.spawn.min_py_files == 4
     assert cfg.spawn.max_specialist_prompt_tokens == 30000
+    assert cfg.spawn == SpawnConfig(**SPAWN_ARGS)  # D12 as changed by decision 0012
+    assert cfg.limits.subagent == AgentLimits(
+        max_model_calls=10, max_tool_calls=15, max_run_tests_calls=1
+    )
     assert cfg.limits.single.max_model_calls == 25
     assert cfg.limits.single.max_tool_calls == 40
     assert cfg.limits.single.max_run_tests_calls is None
@@ -64,7 +77,7 @@ def test_unknown_top_level_key_rejected(tmp_path: Path):
 @pytest.mark.parametrize("bad", [0, -1])
 def test_non_positive_rejected(bad):
     with pytest.raises(ValidationError):
-        SpawnConfig(min_py_files=bad, max_specialist_prompt_tokens=30000)
+        SpawnConfig(**{**SPAWN_ARGS, "min_py_files": bad})
 
 
 @pytest.mark.parametrize(
@@ -72,7 +85,7 @@ def test_non_positive_rejected(bad):
     [(3, 30000, False), (4, 30000, True), (3, 30001, True)],
 )
 def test_should_spawn(files, tokens, expected):
-    cfg = SpawnConfig(min_py_files=4, max_specialist_prompt_tokens=30000)
+    cfg = SpawnConfig(**SPAWN_ARGS)
     assert should_spawn(files, tokens, cfg) is expected
 
 
@@ -116,3 +129,42 @@ def test_missing_specialist_limits_rejected(tmp_path: Path):
 def test_non_positive_run_tests_limit_rejected():
     with pytest.raises(ValidationError):
         AgentLimits(max_model_calls=1, max_tool_calls=1, max_run_tests_calls=0)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["min_py_files", "max_files_per_subagent", "max_subagents", "max_concurrency",
+     "batch_token_budget"],
+)  # fmt: skip
+def test_every_new_spawn_number_must_be_positive_and_present(key):
+    with pytest.raises(ValidationError):
+        SpawnConfig(**{**SPAWN_ARGS, key: 0})
+    missing = {k: v for k, v in SPAWN_ARGS.items() if k != key}
+    with pytest.raises(ValidationError):
+        SpawnConfig(**missing)
+
+
+def test_spawn_switch_is_required_and_a_bool():
+    with pytest.raises(ValidationError):
+        SpawnConfig(**{k: v for k, v in SPAWN_ARGS.items() if k != "enabled"})
+    with pytest.raises(ValidationError):
+        SpawnConfig(**{**SPAWN_ARGS, "enabled": "maybe"})
+
+
+def test_missing_subagent_limits_rejected(tmp_path: Path):
+    text = SPAWN + LIMITS.split("  subagent:")[0]
+    with pytest.raises(ValidationError):
+        load_review_config(_review_yaml(tmp_path, text))
+
+
+def test_with_spawn_changes_only_what_it_is_given():
+    cfg = load_review_config()
+    off = cfg.with_spawn(enabled=False)
+    assert off.spawn == cfg.spawn.model_copy(update={"enabled": False})
+    wide = cfg.with_spawn(max_concurrency=1)
+    assert (wide.spawn.max_concurrency, wide.spawn.enabled) == (1, cfg.spawn.enabled)
+    assert cfg.with_spawn() == cfg
+    assert off.limits == cfg.limits and off.a2a == cfg.a2a
+    with pytest.raises(ValidationError):
+        cfg.with_spawn(max_concurrency=0)
+    assert cfg.limits.for_agent("subagent") is cfg.limits.subagent

@@ -88,6 +88,11 @@ class AgentSpec:
     limits: AgentLimits
     extra_tools: tuple[str, ...] = ()
     focus_categories: tuple[Category, ...] = field(default_factory=tuple)
+    # Stage 4A (decision 0012): text added after the composed prompt (the sub-agent assignment or
+    # the coordination fragment), and the run name's suffix (``<name>-<run_suffix>``). The defaults
+    # leave every stage 1 to 3 agent, and the frozen single prompt, byte for byte as they were.
+    appendix: str = ""
+    run_suffix: str = "review"
 
     def __post_init__(self) -> None:
         bad = sorted(set(self.tool_names) - set(REVIEW_TOOLS))
@@ -107,10 +112,10 @@ class AgentSpec:
 
     @property
     def run_name(self) -> str:
-        return f"{self.name}-review"
+        return f"{self.name}-{self.run_suffix}"
 
     def system_prompt(self) -> str:
-        return compose_prompt(self.prompt_path, self.focus_categories)
+        return compose_prompt(self.prompt_path, self.focus_categories) + self.appendix
 
     def prompt_version(self) -> str:
         """First 12 hex characters of the SHA-256 of the composed system prompt (UTF-8). For a
@@ -180,6 +185,77 @@ class TransportDetail(BaseModel):
     request_bytes: int
 
 
+class BatchInfo(BaseModel):
+    """One sub-agent's batch of files (stage 4A, decision 0012)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: int  # 1-based, in packing order
+    agent: str  # for example "bug_reviewer/sub2"
+    files: list[str]
+    estimated_tokens: int
+    over_budget: bool = False  # a single file larger than ``batch_token_budget``
+
+
+class SubagentTiming(BaseModel):
+    """When one sub-agent ran, in seconds from the start of the fan-out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: str
+    start_s: float
+    end_s: float
+    status: str
+
+
+class FanOutInfo(BaseModel):
+    """The fan-out phase of a spawning specialist: its wall time, its waiting (D7: summed over
+    every wait, and the wall-clock union) and ``net_s`` = ``wall_s - wait_s_wall``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wall_s: float
+    wait_s_wall: float
+    wait_s_sum: float
+    net_s: float
+    timings: list[SubagentTiming] = Field(default_factory=list)
+
+
+class CrossFileInfo(BaseModel):
+    """The specialist's own pass after its sub-agents (cross-file defects)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    duration_s: float
+    wait_s: float
+    net_duration_s: float
+    model_calls: int
+
+
+class SpawnInfo(BaseModel):
+    """The spawn decision of one specialist run and, when it spawned, the batches, the concurrency
+    and the timings (stage 4A, decision 0012)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    spawned: bool
+    triggers: list[str] = Field(default_factory=list)  # "files" and/or "tokens"
+    py_files: int = 0
+    estimated_tokens: int = 0
+    min_py_files: int = 0
+    max_specialist_prompt_tokens: int = 0
+    area: list[str] = Field(default_factory=list)
+    batches: list[BatchInfo] = Field(default_factory=list)
+    file_limit_used: int | None = None
+    budget_exceeded: bool = False  # more than ``max_subagents`` batches: the file limit was raised
+    token_budget_ignored: bool = False  # last resort of the cap (decision 0012)
+    max_concurrency: int | None = None
+    fan_out: FanOutInfo | None = None
+    cross_file: CrossFileInfo | None = None
+
+
 class ReviewResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -215,6 +291,20 @@ class ReviewResult(BaseModel):
     # "a2a" over the A2A service, with ``transport_detail``); None for everything else.
     transport: Literal["local", "a2a"] | None = None
     transport_detail: TransportDetail | None = None
+    # Stage 4A (decision 0012): set only for a specialist that spawned sub-agents (and, in
+    # ``spawn``, for one that decided not to). ``children`` are its sub-agents' results; the
+    # counters above are then its own pass plus the children, counted once; ``own_*`` are its own
+    # pass alone; ``wait_s`` is the nested sum (``wait_s_sum``) and ``net_duration_s`` removes the
+    # wall-clock union ``wait_s_wall``. All stay at their defaults for every other result.
+    children: list[ReviewResult] = Field(default_factory=list)
+    spawn: SpawnInfo | None = None
+    own_model_calls: int = 0
+    own_tool_calls: int = 0
+    own_tool_calls_by_tool: dict[str, int] = Field(default_factory=dict)
+    own_input_tokens: int = 0
+    own_output_tokens: int = 0
+    wait_s_sum: float = 0.0
+    wait_s_wall: float = 0.0
 
 
 # --- Accounting ------------------------------------------------------------------------------

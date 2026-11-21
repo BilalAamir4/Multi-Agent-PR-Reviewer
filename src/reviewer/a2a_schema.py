@@ -17,11 +17,13 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from reviewer.agents.base import Status
+from reviewer.agents.base import ReviewResult, SpawnInfo, Status
 from reviewer.agents.output import Dropped
 from reviewer.schemas import Finding
 
-PROTOCOL_VERSION = "1"
+# "2" (stage 4A, decision 0012): the request carries ``spawn_enabled`` and the response the
+# specialist's sub-agents. The service and the client change together; "1" is rejected.
+PROTOCOL_VERSION = "2"
 SERVICE_NAME = "security_reviewer"  # the graph name in a2a_security/langgraph.json
 
 # Archive safety limits (decision 0011). Checked before decoding and while unpacking.
@@ -40,7 +42,7 @@ class SecurityReviewRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    protocol_version: Literal["1"]
+    protocol_version: Literal["2"]
     pr_title: str
     pr_body: str
     focus: str | None
@@ -48,6 +50,9 @@ class SecurityReviewRequest(BaseModel):
     workspace_archive: str = Field(description="base64 of the tar.gz snapshot of the workspace")
     workspace_sha256: str = Field(description="hex SHA-256 of the decoded tar.gz bytes")
     evaluation: bool
+    spawn_enabled: bool = Field(
+        description="the caller allows sub-agents; the service also applies its own config"
+    )
     trace_parent: dict[str, str] | None = None
 
     @model_validator(mode="after")
@@ -105,6 +110,20 @@ class Counts(BaseModel):
     net_duration_s: float
 
 
+class OwnCounts(BaseModel):
+    """The specialist's own pass alone, and its nested wait totals (stage 4A)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    own_model_calls: int = 0
+    own_tool_calls: int = 0
+    own_tool_calls_by_tool: dict[str, int] = Field(default_factory=dict)
+    own_input_tokens: int = 0
+    own_output_tokens: int = 0
+    wait_s_sum: float = 0.0
+    wait_s_wall: float = 0.0
+
+
 class SecurityReviewResponse(BaseModel):
     """``run_security_review``'s response, plus the service block the A2A service adds. An
     invalid request answers with this same shape: ``status`` ``error``, ``error_class``
@@ -128,8 +147,13 @@ class SecurityReviewResponse(BaseModel):
     counts: Counts
     retries_by_reason: dict[str, int]
     waits_by_reason: dict[str, float]
-    wait_intervals: list[WaitInterval]
+    wait_intervals: list[WaitInterval]  # every wait of the review, sub-agents' included, once
     service: ServiceInfo | None = None
+    # Stage 4A: the sub-agents' full results, the spawn record and the specialist's own
+    # counters (all empty when nothing spawned).
+    children: list[ReviewResult] = Field(default_factory=list)
+    spawn: SpawnInfo | None = None
+    own: OwnCounts = Field(default_factory=OwnCounts)
 
 
 def validate_response(data: Any) -> SecurityReviewResponse:

@@ -2,7 +2,7 @@
 
     uv run reviewer review [--agent NAME] --workspace PATH --diff PATH [--title TEXT]
         [--body-file PATH] [--focus TEXT] [--sandbox-repo NAME] [--security-mode local|remote]
-        [--out PATH] [--eval-mode] [--debug]
+        [--no-spawn] [--subagent-concurrency N] [--out PATH] [--eval-mode] [--debug]
     uv run reviewer review --item item_001 [--out PATH] [--eval-mode] [--debug]
 
 ``--agent`` is ``single`` (the default, the stage 1 baseline), one of the specialists
@@ -15,6 +15,11 @@ there), so ``--item`` works only with ``--agent single``. ``--security-mode`` (o
 ``--agent security_reviewer`` only) overrides ``a2a.security_reviewer.mode`` of
 ``config/review.yaml`` for this run: ``remote`` calls the A2A security service (stage 3,
 decision 0011; start it with ``scripts/run_a2a_security.py``), ``local`` runs it in this process.
+
+``--no-spawn`` and ``--subagent-concurrency N`` (orchestrator and specialists; stage 4A,
+decision 0012) override ``spawn.enabled`` and ``spawn.max_concurrency`` of ``config/review.yaml``
+for this run: with spawning on, a specialist whose share of the change is large (D12) spawns
+sub-agents over batches of its files. A remote security service applies its own config.
 
 Exit codes: 0 complete, 5 partial, 3 quota_paused, 4 limit_reached, 1 error (2 for bad
 arguments).
@@ -110,6 +115,46 @@ def _retries_text(result: ReviewResult) -> str:
     return ", ".join(f"{n} {k}" for k, n in sorted(result.retries_by_reason.items()))
 
 
+def format_hierarchy(result: ReviewResult, indent: str = "  ") -> list[str]:
+    """One line per sub-agent of a specialist that spawned (status, findings, calls, tokens,
+    time and waits), and the spawn decision, batches and fan-out timing (decision 0012)."""
+    lines: list[str] = []
+    sp = result.spawn
+    if sp is None:
+        return lines
+    if not sp.spawned:
+        return [
+            f"{indent}{result.agent}: no sub-agents ({sp.py_files} .py file(s), about "
+            f"{sp.estimated_tokens} tokens)"
+        ]
+    lines.append(
+        f"{indent}{result.agent}: spawned {len(sp.batches)} sub-agent(s) because of "
+        f"{' and '.join(sp.triggers)} ({sp.py_files} .py file(s), about {sp.estimated_tokens} "
+        f"tokens), up to {sp.max_concurrency} at once"
+    )
+    for b in sp.batches:
+        lines.append(f"{indent}  batch {b.index}: {', '.join(b.files)}")
+    if sp.fan_out:
+        f = sp.fan_out
+        lines.append(
+            f"{indent}  fan-out: {f.wall_s:.1f}s wall, {f.wait_s_wall:.1f}s wall-clock waiting "
+            f"({f.wait_s_sum:.1f}s summed), {f.net_s:.1f}s net"
+        )
+    if sp.cross_file:
+        c = sp.cross_file
+        lines.append(
+            f"{indent}  cross-file pass: {c.status}, {c.net_duration_s:.1f}s net + "
+            f"{c.wait_s:.1f}s waiting, {c.model_calls} model call(s)"
+        )
+    for c in result.children:
+        lines.append(
+            f"{indent}  {c.agent}: {c.status}, {len(c.findings)} finding(s), {c.model_calls} "
+            f"model / {c.tool_calls} tool calls, {c.input_tokens} in / {c.output_tokens} out, "
+            f"{c.net_duration_s:.1f}s net + {c.wait_s:.1f}s waiting"
+        )
+    return lines
+
+
 def format_report(result: ReviewResult) -> str:
     lines = [format_table(result), ""]
     status = result.status
@@ -127,6 +172,9 @@ def format_report(result: ReviewResult) -> str:
             counts[d.reason] = counts.get(d.reason, 0) + 1
         lines.append("dropped: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
     tools = ", ".join(f"{k} {v}" for k, v in result.tool_calls_by_tool.items()) or "none"
+    if result.spawn is not None:
+        lines.append("spawn:")
+        lines += format_hierarchy(result)
     lines += [
         f"model:   {result.model_id or '-'} (prompt {result.prompt_version})",
         f"calls:   {result.model_calls} model, {result.tool_calls} tool ({tools})",
@@ -196,6 +244,7 @@ def format_orchestrator_report(result: OrchestratorResult) -> str:
             f"{c.tool_calls} tool calls, {c.input_tokens} in / {c.output_tokens} out, "
             f"{c.net_duration_s:.1f}s net + {c.wait_s:.1f}s waiting"
         )
+        lines += format_hierarchy(c, "    ")
     lines += [
         f"model:   {result.model_id or '-'} (prompt {result.prompt_version})",
         f"calls:   {result.model_calls} model, {result.tool_calls} tool in total "
@@ -230,6 +279,15 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("local", "remote"),
         help="run the security specialist locally or on the A2A service (overrides the config)",
     )
+    r.add_argument(
+        "--no-spawn", action="store_true", help="specialists never spawn sub-agents (this run)"
+    )
+    r.add_argument(
+        "--subagent-concurrency",
+        type=int,
+        metavar="N",
+        help="sub-agents running at once per specialist (default: spawn.max_concurrency)",
+    )
     r.add_argument("--item", help="dataset item id, for example item_001 (single agent only)")
     r.add_argument("--out", type=Path, help="write the full ReviewResult as JSON here")
     r.add_argument("--eval-mode", action="store_true", help="pinned evaluation model (D4)")
@@ -251,6 +309,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.focus and args.agent in ("single", ORCHESTRATOR):
         parser.error("--focus is for the specialists, not the single agent or the orchestrator")
+    if args.agent == "single" and (args.no_spawn or args.subagent_concurrency is not None):
+        parser.error(
+            "--no-spawn and --subagent-concurrency are for the orchestrator and specialists"
+        )
+    if args.subagent_concurrency is not None and args.subagent_concurrency < 1:
+        parser.error("--subagent-concurrency must be at least 1")
     if args.security_mode and args.agent not in (ORCHESTRATOR, "security_reviewer"):
         parser.error("--security-mode is for --agent orchestrator or --agent security_reviewer")
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING)
@@ -268,6 +332,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_review_config()
         if args.security_mode:
             config = config.with_security_mode(args.security_mode)
+        if args.no_spawn or args.subagent_concurrency is not None:
+            config = config.with_spawn(
+                enabled=False if args.no_spawn else None,
+                max_concurrency=args.subagent_concurrency,
+            )
         if args.agent == "single":
             result = review(ctx, title, body, router, item_id=args.item)
         elif args.agent == ORCHESTRATOR:
@@ -292,6 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 router=router,
                 item_id=args.item,
                 evaluation=args.eval_mode,
+                config=config,
             )
         if args.out:
             args.out.parent.mkdir(parents=True, exist_ok=True)

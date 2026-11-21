@@ -453,6 +453,7 @@ def _request(ctx, **over) -> dict:
         "pr_body": body,
         "focus": "the new search query",
         "evaluation": True,
+        "spawn_enabled": False,
     }
     req.update(over)
     return req

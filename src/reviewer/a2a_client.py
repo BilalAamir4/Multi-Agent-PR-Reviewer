@@ -75,6 +75,7 @@ def build_request(
     pr_body: str,
     focus: str | None,
     evaluation: bool,
+    spawn_enabled: bool,
     trace_parent: dict[str, str] | None = None,
 ) -> SecurityReviewRequest:
     archive = pack(workspace_files(ctx))
@@ -87,6 +88,7 @@ def build_request(
         workspace_archive=base64.b64encode(archive).decode("ascii"),
         workspace_sha256=sha256_hex(archive),
         evaluation=evaluation,
+        spawn_enabled=spawn_enabled,
         trace_parent=trace_parent,
     )
 
@@ -235,6 +237,7 @@ def call_remote_security(
     pr_body: str,
     focus: str | None,
     evaluation: bool,
+    spawn_enabled: bool,
     base_url: str,
     assistant_id: str | None = None,
     timeout_s: float | None = None,
@@ -250,7 +253,7 @@ def call_remote_security(
     timeout = timeout_s if timeout_s is not None else default_timeout(evaluation)
     request = build_request(
         ctx, pr_title=pr_title, pr_body=pr_body, focus=focus, evaluation=evaluation,
-        trace_parent=trace_parent,
+        spawn_enabled=spawn_enabled, trace_parent=trace_parent,
     )  # fmt: skip
     body = jsonrpc_body(request)
     payload = body.encode("utf-8")

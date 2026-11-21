@@ -1,0 +1,29 @@
+{
+  "note": "Synthetic development fixture (stage 4A, decision 0012): five .py files (three source, two test) so that a specialist spawns sub-agents. Not part of the evaluation dataset. Informational only: no test asserts these are found. All 20 tests pass on the PR.",
+  "defects": [
+    {
+      "file": "inventory/pricing.py",
+      "line_start": 23,
+      "line_end": 23,
+      "kind": "wrong_comparison",
+      "description": "bulk_discount() documents '10 or more units' but tests qty > BULK_THRESHOLD, so exactly 10 units get no discount."
+    },
+    {
+      "file": "inventory/stock.py",
+      "line_start": 25,
+      "line_end": 25,
+      "kind": "off_by_one",
+      "description": "last_movements() slices from len(history) - n + 1, so it returns n - 1 movements instead of n."
+    },
+    {
+      "file": "inventory/reports.py",
+      "line_start": 15,
+      "line_end": 17,
+      "kind": "missing_none_check",
+      "cross_file": true,
+      "description": "Cross-file: unit_price() in inventory/pricing.py (line 18) now returns None for an unknown SKU instead of raising KeyError, but order_rows() still catches KeyError, so price * qty raises TypeError for an unknown SKU."
+    }
+  ],
+  "batches_expected": "inventory/pricing.py + tests/test_pricing.py (a source/test pair); inventory/reports.py + inventory/stock.py (same folder) + tests/test_integration.py. The cross-file defect spans both batches.",
+  "tests_that_fail_on_the_pr": []
+}

@@ -10,10 +10,19 @@ from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveInt, model
 
 
 class SpawnConfig(BaseModel):
+    """D12 as changed by decision 0012: when a specialist spawns sub-agents and how it batches
+    its files. ``enabled`` is the spawn switch (the CLI's ``--no-spawn``; ``eval.run`` forces it
+    off for the ``orchestrator`` configuration)."""
+
     model_config = ConfigDict(extra="forbid")
 
+    enabled: bool
     min_py_files: PositiveInt
     max_specialist_prompt_tokens: PositiveInt
+    max_files_per_subagent: PositiveInt
+    max_subagents: PositiveInt
+    max_concurrency: PositiveInt
+    batch_token_budget: PositiveInt
 
 
 class AgentLimits(BaseModel):
@@ -30,8 +39,8 @@ class AgentLimits(BaseModel):
 
 
 class LimitsConfig(BaseModel):
-    """``limits.<agent name>``: the stage 1 single agent, the stage 2 specialists and the
-    orchestrator."""
+    """``limits.<agent name>``: the stage 1 single agent, the stage 2 specialists, the
+    orchestrator and (stage 4A) a specialist's sub-agent."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -40,6 +49,7 @@ class LimitsConfig(BaseModel):
     security_reviewer: AgentLimits
     test_reviewer: AgentLimits
     orchestrator: AgentLimits
+    subagent: AgentLimits
 
     def for_agent(self, name: str) -> AgentLimits:
         if name not in type(self).model_fields:
@@ -73,6 +83,20 @@ class ReviewConfig(BaseModel):
     a2a: A2AConfig = A2AConfig(
         security_reviewer=A2AAgentConfig(mode="local", base_url="http://127.0.0.1:2025")
     )
+
+    def with_spawn(
+        self, *, enabled: bool | None = None, max_concurrency: int | None = None
+    ) -> ReviewConfig:
+        """A copy with the spawn switch and/or the sub-agent concurrency replaced (the CLI's
+        ``--no-spawn`` and ``--subagent-concurrency``; ``eval.run``)."""
+        update: dict[str, object] = {}
+        if enabled is not None:
+            update["enabled"] = enabled
+        if max_concurrency is not None:
+            update["max_concurrency"] = max_concurrency
+        return self.model_copy(
+            update={"spawn": SpawnConfig.model_validate({**self.spawn.model_dump(), **update})}
+        )
 
     def with_security_mode(self, mode: Literal["local", "remote"]) -> ReviewConfig:
         """A copy with the security specialist's mode replaced (the CLI's ``--security-mode``)."""

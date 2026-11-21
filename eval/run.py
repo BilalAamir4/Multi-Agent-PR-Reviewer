@@ -3,9 +3,18 @@
     uv run python -m eval.run --config single [--items item_001 item_003 ...] [--force]
         [--reason TEXT]
 
-``--config`` is ``single`` (stage 1) or ``orchestrator`` (stage 2B: the orchestrator calling the
-specialists; its first run on the dataset is the stage 5 evaluation). The orchestrator's run
-file also holds its plan and its children's full results, and its ``wait_s_wall``.
+``--config`` is ``single`` (stage 1), ``orchestrator`` (stage 2B: the orchestrator calling the
+specialists; its first run on the dataset is the stage 5 evaluation) or ``subagents`` (stage 4A:
+the same with each specialist allowed to spawn sub-agents). The orchestrator's run file also holds
+its plan and its children's full results, and its ``wait_s_wall``.
+
+Spawning (decision 0012): ``--config orchestrator`` **forces spawning off** (row 2 of the results
+table) and records it; ``--config subagents`` turns it on and applies the **D6 reuse rule**: for
+each item the saved ``orchestrator`` run is read, and when none of the specialists it called would
+spawn (``should_spawn_for`` on their area) its scored result and run file are copied into
+``eval/results/subagents/`` marked ``reused_from: "orchestrator"``; otherwise a full review runs
+with spawning on. Missing ``orchestrator`` results end the run with "run --config orchestrator
+first".
 
 Always uses ``QuotaRouter(evaluation=True)``: one pinned model, no fallback (D4). For each item
 it writes
@@ -43,11 +52,15 @@ from eval.ground_truth import DatasetError
 from eval.score import BUCKETS, MODES, score_config
 from reviewer.agents.orchestrator import OrchestratorResult, orchestrate
 from reviewer.agents.single import ReviewResult, review
+from reviewer.agents.subagents import should_spawn_for
 from reviewer.cli import format_reset, item_inputs
-from reviewer.config import load_models_config, load_review_config, repo_root
+from reviewer.config import ReviewConfig, load_models_config, load_review_config, repo_root
 from reviewer.models import QuotaRouter
+from reviewer.tools import ReviewContext
 
-CONFIGS = ("single", "orchestrator")
+CONFIGS = ("single", "orchestrator", "subagents")
+ORCHESTRATED = ("orchestrator", "subagents")  # configurations that run the orchestrator
+REUSE_SOURCE = "orchestrator"  # D6: where "subagents" takes the results of unchanged items from
 
 # Scoring policy for every configuration (decision 0010). Infrastructure causes say nothing about
 # the architecture, so the item is re-run; every other end state is scored with the findings that
@@ -59,7 +72,9 @@ SANDBOX_NOTE = "sandbox unavailable"
 
 
 def _children(r: ReviewResult) -> list[ReviewResult]:
-    return list(r.children) if isinstance(r, OrchestratorResult) else []
+    """The agents that ran below ``r``: an orchestrator's specialists, a specialist's
+    sub-agents."""
+    return list(r.children)
 
 
 def _rerun_cause(r: ReviewResult) -> str | None:
@@ -100,11 +115,99 @@ def decide_scoring(result: ReviewResult) -> tuple[str, str]:
             return "rerun_required", "partial: no recorded cause"
         parts = []
         for c in bad:
-            if c.status == "partial":  # a partial child with no sandbox note: cause unknown
-                return "rerun_required", f"partial: {c.agent} partial with no recorded cause"
+            unexplained = _unexplained_partial(c)
+            if unexplained is not None:  # a partial with no recorded cause
+                return "rerun_required", f"partial: {unexplained} partial with no recorded cause"
             parts.append(f"{c.agent} {c.status}")
         return "scored", "partial: " + ", ".join(parts)
     return "rerun_required", f"unexpected status {result.status}"
+
+
+def _unexplained_partial(r: ReviewResult) -> str | None:
+    """The agent name of a ``partial`` in ``r`` or below with no cause the policy accepts, or
+    None. A ``partial`` is explained by sub-agents that did not end ``complete`` (a specialist
+    that spawned): each of those is then judged the same way, so a sub-agent that hit a call limit
+    or a non-infrastructure error is scored, and a sub-agent ``partial`` with no recorded cause
+    is not (decision 0012, extending decision 0010)."""
+    if r.status == "partial":
+        bad = [c for c in _children(r) if c.status != "complete"]
+        if not bad:
+            return r.agent
+        for c in bad:
+            found = _unexplained_partial(c)
+            if found is not None:
+                return found
+    return None
+
+
+def review_config_for(config: str) -> ReviewConfig:
+    """The review config a configuration runs with: ``orchestrator`` forces spawning off (row 2),
+    ``subagents`` forces it on (row 3), every other configuration reads the file as it is."""
+    base = load_review_config()
+    if config == "orchestrator":
+        return base.with_spawn(enabled=False)
+    if config == "subagents":
+        return base.with_spawn(enabled=True)
+    return base
+
+
+class MissingOrchestratorResults(Exception):
+    """``--config subagents`` needs the saved ``orchestrator`` results of every item it handles."""
+
+
+def saved_orchestrator_run(item_id: str, results_root: Path) -> dict[str, Any]:
+    """The saved ``orchestrator`` run file of ``item_id`` (its scored file must exist too)."""
+    src = results_root / REUSE_SOURCE
+    run_file, scored = src / "runs" / f"{item_id}.json", src / f"{item_id}.json"
+    if not run_file.is_file() or not scored.is_file():
+        raise MissingOrchestratorResults(f"no scored orchestrator result for {item_id}")
+    return json.loads(run_file.read_bytes())
+
+
+def specialists_that_would_spawn(
+    item_id: str, saved: dict[str, Any], ctx: ReviewContext, review_config: ReviewConfig
+) -> list[str]:
+    """The specialists the saved orchestrator run called that would spawn sub-agents on this item
+    (``should_spawn_for`` on their area; the switch is not consulted)."""
+    called = [c["agent"] for c in saved["result"].get("children", [])]
+    return [n for n in called if should_spawn_for(n, ctx, review_config.spawn).spawn]
+
+
+def reuse_orchestrator_result(
+    item_id: str,
+    results_root: Path,
+    out_dir: Path,
+    reason: str,
+    ctx: ReviewContext,
+    review_config: ReviewConfig,
+) -> OrchestratorResult | None:
+    """D6 reuse (decision 0012): when no specialist the saved orchestrator run called would spawn,
+    copy its scored result and its run file into ``out_dir`` and return the saved result.
+
+    The scored file must say ``config: "subagents"`` (the scorer checks it against the folder);
+    the run file carries ``reused_from: "orchestrator"``, and its ``run_log`` gets a new entry that
+    says so. Returns None when something would spawn (the caller runs a full review)."""
+    saved = saved_orchestrator_run(item_id, results_root)
+    if specialists_that_would_spawn(item_id, saved, ctx, review_config):
+        return None
+    scored = json.loads((results_root / REUSE_SOURCE / f"{item_id}.json").read_bytes())
+    _write_json(out_dir / f"{item_id}.json", {**scored, "config": "subagents"})
+    entry = {
+        "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "reason": reason,
+        "reused_from": REUSE_SOURCE,
+        "status": saved["result"]["status"],
+        "scoring": saved["scoring"],
+    }
+    target = out_dir / "runs" / f"{item_id}.json"
+    previous = json.loads(target.read_bytes()).get("run_log", []) if target.is_file() else None
+    # A re-run (--force) keeps this folder's own history; the first reuse starts from the source's.
+    run_log = [*(previous if previous is not None else saved.get("run_log", [])), entry]
+    _write_json(
+        out_dir / "runs" / f"{item_id}.json",
+        {**saved, "reused_from": REUSE_SOURCE, "run_log": run_log},
+    )
+    return OrchestratorResult.model_validate(saved["result"])
 
 
 def results_dir(config: str, root: Path | None = None) -> Path:
@@ -127,16 +230,34 @@ def _load_run_log(path: Path) -> list[dict[str, Any]]:
 
 
 def run_item(
-    item_id: str, config: str, router: QuotaRouter, out_dir: Path, reason: str
+    item_id: str,
+    config: str,
+    router: QuotaRouter,
+    out_dir: Path,
+    reason: str,
+    results_root: Path | None = None,
 ) -> ReviewResult:
     """Review one item and write its run file (always) and its scored file (when
-    ``decide_scoring`` says ``scored``); the decision and its cause go in the run file."""
+    ``decide_scoring`` says ``scored``); the decision and its cause go in the run file.
+
+    ``orchestrator`` runs with spawning forced off, ``subagents`` with it on and, where no called
+    specialist would spawn, reuses the saved ``orchestrator`` result instead of reviewing
+    (``reuse_orchestrator_result``; ``results_root`` is the folder that holds both
+    configurations, default ``eval/results``)."""
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     ctx, title, body = item_inputs(item_id)
-    review_config = load_review_config()
-    security_mode = review_config.a2a.security_reviewer.mode if config == "orchestrator" else None
-    if config == "orchestrator":
-        result = orchestrate(ctx, title, body, router, item_id=item_id)
+    review_config = review_config_for(config)
+    if config == "subagents":
+        reused = reuse_orchestrator_result(
+            item_id, results_root or repo_root() / "eval" / "results", out_dir, reason, ctx,
+            review_config,
+        )  # fmt: skip
+        if reused is not None:
+            return reused
+    orchestrated = config in ORCHESTRATED
+    security_mode = review_config.a2a.security_reviewer.mode if orchestrated else None
+    if orchestrated:
+        result = orchestrate(ctx, title, body, router, item_id=item_id, config=review_config)
     else:
         result = review(ctx, title, body, router, item_id=item_id)
     run_path = out_dir / "runs" / f"{item_id}.json"
@@ -161,6 +282,17 @@ def run_item(
                 if security and security.transport_detail
                 else None
             ),
+            # Stage 4A (decision 0012): was spawning on, and what each specialist did.
+            "spawn_enabled": review_config.spawn.enabled,
+            "spawn_max_concurrency": review_config.spawn.max_concurrency,
+            "spawned": {
+                c.agent: {
+                    "spawned": bool(c.spawn and c.spawn.spawned),
+                    "subagents": len(c.children),
+                    "model_calls": c.model_calls,
+                }
+                for c in result.children
+            },
         }
     decision, cause = decide_scoring(result)
     run_log.append(
@@ -189,6 +321,7 @@ def run_item(
             "result": result.model_dump(mode="json"),
             "security_mode": security_mode,
             "scoring": {"decision": decision, "cause": cause},
+            "spawn_enabled": review_config.spawn.enabled if orchestrated else None,
             "run_log": run_log,
         },
     )
@@ -233,10 +366,14 @@ def summary_markdown(
     config: str,
     today: str,
     scoring: tuple[dict[str, dict[str, str]], int, int] | None = None,
+    reuse: dict[str, str | None] | None = None,
 ) -> str:
     models = load_models_config()
     spec = models.models[models.evaluation.model]
-    limits = load_review_config().limits.for_agent(config)
+    limits = load_review_config().limits.for_agent(
+        "orchestrator" if config in ORCHESTRATED else config
+    )
+    prompt_file = "orchestrator" if config in ORCHESTRATED else config
     agg = report["aggregates"]
     results = list(runs.values())
     model_ids = sorted({r.model_id for r in results if r.model_id})
@@ -247,7 +384,7 @@ def summary_markdown(
         f"- Date: {today} (UTC)",
         f"- Model: {', '.join(f'`{m}`' for m in model_ids) or '-'} (evaluation mode, D4)",
         f"- Prompt version: {', '.join(f'`{v}`' for v in versions)} (`src/reviewer/prompts/"
-        f"{config}.md`, SHA-256, first 12 hex)",
+        f"{prompt_file}.md`, SHA-256, first 12 hex)",
         f"- Limits: `max_model_calls` {limits.max_model_calls}, `max_tool_calls` "
         f"{limits.max_tool_calls} (`config/review.yaml` `limits.{config}`)",
         f"- Items: {agg['strict']['all']['items']} ({agg['strict']['all']['clean_items']} clean); "
@@ -355,11 +492,34 @@ def summary_markdown(
     ]
     for (decision, cause), n in sorted(by_cause.items()):
         out.append(f"| {decision} | {cause} | {n} |")
+    if config == "orchestrator":
+        out += ["", "Spawning: off (forced for this configuration, decision 0012; row 2)."]
+    if config == "subagents":
+        reused = sorted(i for i, src in (reuse or {}).items() if src)
+        ran = sorted(i for i, src in (reuse or {}).items() if not src)
+        out += [
+            "",
+            "## Reuse (decision 0012, D6)",
+            "",
+            "Spawning: on. An item is reused from the saved `orchestrator` results when none of "
+            "the specialists it called would spawn sub-agents; otherwise a full review ran.",
+            "",
+            f"- Reused from `{REUSE_SOURCE}` ({len(reused)}): {', '.join(reused) or '-'}",
+            f"- Run with spawning on ({len(ran)}): {', '.join(ran) or '-'}",
+        ]
     return "\n".join(out) + "\n"
 
 
+def load_reuse(out_dir: Path) -> dict[str, str | None]:
+    """For each item with a run file: ``"orchestrator"`` when it was reused, else None."""
+    return {
+        p.stem: json.loads(p.read_bytes()).get("reused_from")
+        for p in sorted((out_dir / "runs").glob("item_*.json"))
+    }
+
+
 def load_runs(out_dir: Path, config: str = "single") -> dict[str, ReviewResult]:
-    model = OrchestratorResult if config == "orchestrator" else ReviewResult
+    model = OrchestratorResult if config in ORCHESTRATED else ReviewResult
     runs: dict[str, ReviewResult] = {}
     for path in sorted((out_dir / "runs").glob("item_*.json")):
         data = json.loads(path.read_bytes())
@@ -372,7 +532,12 @@ def score_and_summarize(config: str, out_dir: Path, dataset: Path) -> str:
     _write_json(out_dir / "score.json", report)
     today = datetime.now(UTC).date().isoformat()
     text = summary_markdown(
-        report, load_runs(out_dir, config), config, today, load_scoring(out_dir)
+        report,
+        load_runs(out_dir, config),
+        config,
+        today,
+        load_scoring(out_dir),
+        load_reuse(out_dir),
     )
     (out_dir / "summary.md").write_bytes(text.encode("utf-8"))
     return text
@@ -401,6 +566,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: not dataset items: {', '.join(unknown)}", file=sys.stderr)
         return 2
 
+    if args.config == "subagents":  # D6: the orchestrator results must exist first
+        todo = [i for i in items if args.force or not (out_dir / f"{i}.json").is_file()]
+        missing_src = []
+        for i in todo:
+            try:
+                saved_orchestrator_run(i, args.results)
+            except MissingOrchestratorResults:
+                missing_src.append(i)
+        if missing_src:
+            print(
+                f"error: no scored orchestrator results for {', '.join(missing_src)}: "
+                "run --config orchestrator first",
+                file=sys.stderr,
+            )
+            return 2
     router = QuotaRouter(evaluation=True)
     failed: list[str] = []
     for item_id in items:
@@ -410,11 +590,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
         reason = args.reason or ("re-run (--force)" if scored.is_file() else "first run")
         try:
-            result = run_item(item_id, args.config, router, out_dir, reason)
+            result = run_item(item_id, args.config, router, out_dir, reason, args.results)
         except Exception as e:  # materialize or I/O failure: record nothing, report it
             print(f"{item_id}: error: {type(e).__name__}: {e}".splitlines()[0], file=sys.stderr)
             failed.append(item_id)
             continue
+        if args.config == "subagents" and load_reuse(out_dir).get(item_id):
+            print(f"{item_id}: reused from {REUSE_SOURCE} (no called specialist would spawn)")
         print(
             f"{item_id}: {result.status}, {len(result.findings)} finding(s), "
             f"{result.model_calls} model / {result.tool_calls} tool calls, "

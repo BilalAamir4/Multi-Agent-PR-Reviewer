@@ -38,7 +38,7 @@ from pydantic import ValidationError
 
 from reviewer.a2a_schema import PROTOCOL_VERSION, SERVICE_NAME, SecurityReviewRequest
 from reviewer.agents.specialists import SECURITY, run_security_review, specialist_spec
-from reviewer.config import load_models_config, repo_root
+from reviewer.config import load_models_config, load_review_config, repo_root
 from reviewer.models import QuotaRouter, QuotaTracker
 from reviewer.snapshot import ArchiveError, check_sha256, unpack
 from reviewer.test_hooks import fake_model_script, script_builder
@@ -144,9 +144,28 @@ def _trace_id(headers: dict[str, str] | None) -> str | None:
     return m.group(0) if m else None
 
 
+def _claimed_version(text: str) -> str | None:
+    """The ``protocol_version`` the request text claims, when it is a JSON object with one."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    if isinstance(data, dict) and isinstance(data.get("protocol_version"), str):
+        return data["protocol_version"]
+    return None
+
+
 def serve(text: str) -> dict[str, Any]:
     """The whole job for one request text: the response dict, always (never raises for a bad
     request or a failed review)."""
+    version = _claimed_version(text)
+    if version is not None and version != PROTOCOL_VERSION:
+        return error_response(
+            "InvalidRequest",
+            f"unsupported protocol_version {version!r}: this service speaks "
+            f"{PROTOCOL_VERSION!r}; the client and the service must be upgraded together "
+            "(decision 0012)",
+        )
     try:
         request = SecurityReviewRequest.model_validate_json(text)
     except ValidationError as e:
@@ -179,17 +198,19 @@ def serve(text: str) -> dict[str, Any]:
             "pr_body": request.pr_body,
             "focus": request.focus,
             "evaluation": request.evaluation,
+            "spawn_enabled": request.spawn_enabled,
         }
         router = make_router(request.evaluation)
+        config = load_review_config()  # the service applies its own spawn settings too
         if request.trace_parent and tracing_is_enabled():
             # The review's runs become children of the orchestrator's tool-call run.
             with tracing_context(parent=request.trace_parent):
                 response = run_security_review(
-                    payload, router=router, parent_config={"metadata": metadata}
+                    payload, router=router, parent_config={"metadata": metadata}, config=config
                 )
         else:
             response = run_security_review(
-                payload, router=router, parent_config={"metadata": metadata}
+                payload, router=router, parent_config={"metadata": metadata}, config=config
             )
         response["service"] = _service_block()
         return response

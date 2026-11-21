@@ -763,7 +763,7 @@ def test_quota_paused_inside_a_real_specialist_ends_the_review(ctx, router, fake
 def test_security_goes_through_run_security_review(ctx, router, fake_time, monkeypatch):
     calls = []
 
-    def fake_security(request, *, router=None, clock=None, parent_config=None):
+    def fake_security(request, *, router=None, clock=None, parent_config=None, config=None):
         calls.append(request)
         return orch_response()
 
@@ -776,7 +776,10 @@ def test_security_goes_through_run_security_review(ctx, router, fake_time, monke
     runner = orch.default_runner(ctx, "T", "B", router, item_id="x", clock=fake_time.clock,
                                  config=load_review_config())  # fmt: skip
     result = runner(SEC, "the sql", {})
-    assert set(calls[0]) == {"workspace", "diff_text", "pr_title", "pr_body", "focus", "evaluation"}
+    assert set(calls[0]) == {
+        "workspace", "diff_text", "pr_title", "pr_body", "focus", "evaluation", "spawn_enabled",
+    }  # fmt: skip
+    assert calls[0]["spawn_enabled"] is True
     assert calls[0]["focus"] == "the sql" and calls[0]["evaluation"] is True
     assert result.agent == SEC and result.status == "complete" and len(result.findings) == 1
     assert (
@@ -874,6 +877,36 @@ def test_cli_refuses_item_and_focus_for_the_orchestrator(cli_env, capsys):
                   "--focus", "x"])  # fmt: skip
 
 
+def test_cli_spawn_options_reach_the_config(monkeypatch, tmp_path, cli_env):
+    seen = []
+
+    def fake(ctx, title, body, router, item_id=None, config=None):
+        seen.append(config.spawn)
+        return cli_env["result"]
+
+    monkeypatch.setattr(cli, "orchestrate", fake)
+    monkeypatch.setattr(cli, "load_review_config", lambda *a, **kw: load_review_config())
+    assert cli.main(cli_args(tmp_path, "--eval-mode")) == 0
+    assert (seen[-1].enabled, seen[-1].max_concurrency) == (True, 3)
+    assert cli.main(cli_args(tmp_path, "--eval-mode", "--subagent-concurrency", "1")) == 0
+    assert (seen[-1].enabled, seen[-1].max_concurrency) == (True, 1)
+    assert cli.main(cli_args(tmp_path, "--eval-mode", "--no-spawn")) == 0
+    assert seen[-1].enabled is False and seen[-1].max_concurrency == 3
+
+
+def test_cli_spawn_options_are_checked(cli_env, tmp_path, capsys):
+    for extra, message in (
+        (("--subagent-concurrency", "0"), "at least 1"),
+        (("--no-spawn",), "orchestrator and specialists"),
+    ):
+        argv = ["review", "--item", "item_001", *extra]
+        if "--no-spawn" not in extra:
+            argv = cli_args(tmp_path, *extra)
+        with pytest.raises(SystemExit) as e:
+            cli.main(argv)
+        assert e.value.code == 2 and message in capsys.readouterr().err
+
+
 # --- eval.run --config orchestrator ----------------------------------------------------------
 
 
@@ -884,7 +917,8 @@ def test_runner_writes_files_and_scorer_reads_them(tmp_path, monkeypatch):
     items = sorted(p.name for p in dataset.iterdir() if (p / "ground_truth.json").is_file())
     seen = []
 
-    def fake_orchestrate(ctx, title, body, router, item_id=None):
+    def fake_orchestrate(ctx, title, body, router, item_id=None, config=None):
+        assert config is not None and config.spawn.enabled is False  # row 2 forces it off
         seen.append(item_id)
         return canned(findings=[fnd(file="pkg/util.py", start=2, end=2)], item_id=item_id)
 

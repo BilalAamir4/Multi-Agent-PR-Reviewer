@@ -54,7 +54,12 @@ from reviewer.agents.base import (
     recursion_limit,
     retry_counts,
 )
-from reviewer.agents.output import Dropped, _is_duplicate
+from reviewer.agents.output import Dropped
+from reviewer.agents.reports import (
+    finding_id,
+    format_specialist_output,
+    merge_candidates,
+)
 from reviewer.agents.specialists import (
     BUG,
     NAMES,
@@ -64,6 +69,7 @@ from reviewer.agents.specialists import (
     run_specialist,
     specialist_spec,
 )
+from reviewer.agents.subagents import ABORT_CLASSES as SUBAGENT_ABORT_CLASSES
 from reviewer.config import AgentLimits, ReviewConfig, load_review_config
 from reviewer.models import (
     QuotaPaused,
@@ -88,7 +94,7 @@ SPECIALIST_TOOL = {
     TESTS: "call_test_reviewer",
 }
 # Errors in a specialist that end the whole review instead of making it ``partial``.
-ABORT_CLASSES = frozenset({"AllExhausted", "RetriesExhausted"})
+ABORT_CLASSES = SUBAGENT_ABORT_CLASSES  # the same two classes end a review in a sub-agent
 
 
 # --- What the orchestrator answers ------------------------------------------------------------
@@ -152,42 +158,6 @@ class SpecialistAbort(Exception):
         )
 
 
-def finding_id(agent: str, index: int) -> str:
-    """``<specialist>#<index>``, 1-based over the specialist's findings."""
-    return f"{agent}#{index}"
-
-
-def _one_line(text: str) -> str:
-    return " ".join(text.split())
-
-
-def format_specialist_output(result: ReviewResult) -> str:
-    """The compact text the orchestrator reads: name, status, notes, one line per finding (no
-    explanations) and the dropped counts."""
-    lines = [f"specialist: {result.agent}", f"status: {result.status}"]
-    if result.status in ("error", "limit_reached"):
-        why = result.limit or f"{result.error_class}: {result.error}"
-        lines.append(f"reason: {_one_line(why)}")
-    for note in result.notes:
-        lines.append(f"note: {_one_line(note)}")
-    lines.append(
-        f"findings ({len(result.findings)}): id | file:lines | category | severity | "
-        "confidence | title"
-    )
-    for i, f in enumerate(result.findings, 1):
-        span = f"{f.line_start}-{f.line_end}"
-        lines.append(
-            f"{finding_id(result.agent, i)} | {f.file}:{span} | {f.category} | {f.severity} | "
-            f"{f.confidence:.2f} | {_one_line(f.title)}"
-        )
-    if not result.findings:
-        lines.append("(none)")
-    if result.dropped:
-        counts = Counter(d.reason for d in result.dropped)
-        lines.append("dropped: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
-    return "\n".join(lines)
-
-
 def response_to_result(
     response: dict[str, Any], limits: AgentLimits, item_id: str | None = None
 ) -> ReviewResult:
@@ -199,8 +169,9 @@ def response_to_result(
     data = {
         k: v for k, v in response.items() if k in ReviewResult.model_fields and k != "transport"
     }
+    own = response.get("own") or {}  # the specialist's own counters and nested wait totals
     return ReviewResult.model_validate(
-        {**data, **counts, "limits": limits.model_dump(), "item_id": item_id}
+        {**data, **counts, **own, "limits": limits.model_dump(), "item_id": item_id}
     )
 
 
@@ -283,6 +254,7 @@ def run_security_remote(
             pr_body=pr_body,
             focus=focus,
             evaluation=evaluation,
+            spawn_enabled=config.spawn.enabled,
             base_url=a2a.base_url,
             trace_parent=trace_headers(tool_config),
         )
@@ -350,10 +322,12 @@ def default_runner(
                     "pr_body": pr_body,
                     "focus": focus,
                     "evaluation": router.evaluation,
+                    "spawn_enabled": config.spawn.enabled,
                 },
                 router=router,
                 clock=clock,
                 parent_config=tool_config,
+                config=config,
             )
             result = response_to_result(response, security_limits, item_id)
             return result.model_copy(update={"transport": "local"})
@@ -368,6 +342,7 @@ def default_runner(
             evaluation=router.evaluation,
             clock=clock,
             parent_config=tool_config,
+            config=config,
         )
 
     return run
@@ -508,33 +483,15 @@ def merge_findings(results: dict[str, ReviewResult]) -> tuple[list[Finding], lis
     """Deterministic merge across specialists (decision 0009).
 
     Candidates are the specialists' findings in the order bug, security, test, each in its own
-    order. The duplicate rule of decision 0007 (same file, same category, overlapping lines) is
-    applied across specialists: candidates are visited from the highest confidence down, a tie
-    going to the earlier candidate (so the earlier specialist); each is kept unless it duplicates
-    one already kept. Findings with different categories are never duplicates. A dropped one is
-    recorded with the reason ``duplicate`` and the id of the finding it duplicated. Kept findings
-    stay in candidate order; each keeps the ``agent`` and ``model`` of its specialist."""
+    order; ``merge_candidates`` applies the duplicate rule of decision 0007 across them (highest
+    confidence first, a tie going to the earlier specialist). A dropped one is recorded with the
+    reason ``duplicate`` and the id of the finding it duplicated. Kept findings stay in candidate
+    order; each keeps the ``agent`` and ``model`` of its specialist."""
     cands: list[tuple[str, Finding]] = []
     for name in ORDER:
         if name in results:
             cands += [(finding_id(name, i), f) for i, f in enumerate(results[name].findings, 1)]
-    order = sorted(range(len(cands)), key=lambda i: (-cands[i][1].confidence, i))
-    kept: list[int] = []
-    dropped: list[Dropped] = []
-    for i in order:
-        fid, f = cands[i]
-        winner = next((j for j in kept if _is_duplicate(cands[j][1], f)), None)
-        if winner is None:
-            kept.append(i)
-            continue
-        wid, w = cands[winner]
-        draft = {**f.model_dump(mode="json"), "finding_id": fid, "duplicate_of": wid}
-        detail = (
-            f"{fid} duplicates {wid} ({w.file}:{w.line_start}-{w.line_end}, {w.category}, "
-            f"confidence {w.confidence}), which is kept"
-        )
-        dropped.append(Dropped(draft=draft, reason="duplicate", detail=detail))
-    return [cands[i][1] for i in sorted(kept)], dropped
+    return merge_candidates(cands)
 
 
 def _tagged(agent: str, d: Dropped) -> Dropped:

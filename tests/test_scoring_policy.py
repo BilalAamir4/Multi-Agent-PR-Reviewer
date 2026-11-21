@@ -142,7 +142,7 @@ def run_with(monkeypatch, tmp_path, config, outcomes):
     dataset = tmp_path / "dataset"
     shutil.copytree(FIXTURES / "dataset", dataset)
     results = tmp_path / "results"
-    fake = lambda ctx, title, body, router, item_id=None: outcomes[item_id]  # noqa: E731
+    fake = lambda ctx, title, body, router, item_id=None, config=None: outcomes[item_id]  # noqa: E731
     monkeypatch.setattr(runner, "orchestrate" if config == "orchestrator" else "review", fake)
     monkeypatch.setattr(runner, "item_inputs", lambda item_id: (object(), "t", "b"))
     monkeypatch.setattr(runner, "QuotaRouter", lambda evaluation: None)
@@ -206,7 +206,7 @@ def test_rerun_required_is_recorded_not_scored_and_exits_non_zero(
     runner_outcomes = {"item_002": good}
     monkeypatch.setattr(
         runner, "orchestrate" if config == "orchestrator" else "review",
-        lambda ctx, t, b, router, item_id=None: runner_outcomes[item_id],
+        lambda ctx, t, b, router, item_id=None, config=None: runner_outcomes[item_id],
     )  # fmt: skip
     assert runner.main([*argv_fix, "--reason", f"re-run after {kind}"]) == 0
     summary = (out / "summary.md").read_text(encoding="utf-8")

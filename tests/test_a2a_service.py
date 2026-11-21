@@ -44,7 +44,7 @@ def _never_reach_a_model(monkeypatch):
 
 def request_text(archive: bytes, **over) -> str:
     data = {
-        "protocol_version": "1",
+        "protocol_version": "2",
         "pr_title": "t",
         "pr_body": "b",
         "focus": None,
@@ -52,6 +52,7 @@ def request_text(archive: bytes, **over) -> str:
         "workspace_archive": base64.b64encode(archive).decode(),
         "workspace_sha256": sha256_hex(archive),
         "evaluation": True,
+        "spawn_enabled": False,
         "trace_parent": None,
     }
     data.update(over)
@@ -229,8 +230,10 @@ def test_oversized_archive_is_a_clean_error(temp_dirs, monkeypatch):
     [
         ("not json", "invalid"),
         ("[]", "invalid"),
-        (json.dumps({"protocol_version": "1"}), "pr_title"),
-        (request_text(pack(FILES), protocol_version="2"), "protocol_version"),
+        (json.dumps({"protocol_version": "2"}), "pr_title"),
+        (request_text(pack(FILES), protocol_version="1"), "upgraded together"),
+        (request_text(pack(FILES), protocol_version="3"), "protocol_version"),
+        (request_text(pack(FILES), spawn_enabled="yes"), "spawn_enabled"),
         (request_text(pack(FILES), surprise=1), "surprise"),
         (request_text(pack(FILES), evaluation="yes"), "evaluation"),
         (request_text(pack(FILES), workspace_sha256="XYZ"), "workspace_sha256"),
@@ -252,7 +255,7 @@ def test_node_without_a_human_message_answers_an_error():
 def test_node_reads_the_last_human_message_and_answers_json(monkeypatch, temp_dirs):
     seen = {}
 
-    def fake_review(payload, *, router, parent_config):
+    def fake_review(payload, *, router, parent_config, config):
         seen["payload"] = payload
         seen["files"] = sorted(p.name for p in Path(payload["workspace"]).rglob("*") if p.is_file())
         seen["router_eval"] = router.evaluation
@@ -364,7 +367,9 @@ def test_serve_matches_the_local_run_with_the_same_scripted_model(tmp_path, monk
     monkeypatch.setenv(FAKE_MODEL_VAR, str(script))
     monkeypatch.setattr(service, "_tracker", QuotaTracker(tmp_path / "quota.a2a.json", providers))
     title, body = pr_text("dev_security_pr")
-    request = build_request(ctx, pr_title=title, pr_body=body, focus=FOCUS, evaluation=True)
+    request = build_request(
+        ctx, pr_title=title, pr_body=body, focus=FOCUS, evaluation=True, spawn_enabled=False
+    )
     remote = service.serve(request.model_dump_json())
 
     assert local["status"] == "complete", local
@@ -373,3 +378,66 @@ def test_serve_matches_the_local_run_with_the_same_scripted_model(tmp_path, monk
     assert remote["service"]["pid"] > 0 and "service" not in comparable(local)
     assert comparable(remote) == comparable(local)
     assert remote["counts"]["model_calls"] == 4 and remote["counts"]["input_tokens"] == 4000
+
+
+def test_a_spawning_review_through_serve_matches_the_local_run(tmp_path, monkeypatch):
+    """The parity rule with sub-agents (decision 0012): the same scripted model, one sub-agent at a
+    time, through ``serve`` and through ``run_security_review`` gives identical responses (children
+    and spawn record included) once timings, waits and the service block are removed."""
+    from reviewer.a2a_client import build_request
+    from reviewer.agents.specialists import run_security_review
+    from reviewer.config import load_models_config, load_review_config
+    from reviewer.models import QuotaRouter, QuotaTracker
+    from reviewer.test_hooks import script_builder
+    from tests.a2a_helpers import FOCUS, comparable, request_for, spawn_script
+    from tests.dev_pr import make_fixture_workspace, pr_text
+
+    real = load_review_config()
+    spawn = real.spawn.model_copy(
+        update={"min_py_files": 2, "max_files_per_subagent": 2, "max_concurrency": 1}
+    )
+    cfg = real.model_copy(update={"spawn": spawn})
+    ctx = make_fixture_workspace("dev_security_pr", tmp_path)
+    script = tmp_path / "script.json"
+    script.write_bytes(json.dumps(spawn_script(ctx)).encode("utf-8"))
+    config = load_models_config()
+    providers = {m: s.provider for m, s in config.models.items()}
+    local_router = QuotaRouter(
+        evaluation=True, tracker=QuotaTracker(tmp_path / "quota.json", providers)
+    )
+    local_router.build = script_builder(script)
+    monkeypatch.undo()  # the autouse guard must not stop the real review below
+    request = {**request_for(ctx), "spawn_enabled": True}
+    local = run_security_review(request, router=local_router, config=cfg)
+
+    monkeypatch.setenv(TEST_MODE_VAR, "1")
+    monkeypatch.setenv(FAKE_MODEL_VAR, str(script))
+    monkeypatch.setattr(service, "load_review_config", lambda *a, **kw: cfg)
+    monkeypatch.setattr(service, "_tracker", QuotaTracker(tmp_path / "quota.a2a.json", providers))
+    title, body = pr_text("dev_security_pr")
+    wire = build_request(
+        ctx, pr_title=title, pr_body=body, focus=FOCUS, evaluation=True, spawn_enabled=True
+    )
+    remote = service.serve(wire.model_dump_json())
+
+    assert local["status"] == "complete", local
+    assert local["spawn"]["spawned"] is True and len(local["children"]) == 2
+    assert [c["agent"] for c in local["children"]] == [
+        "security_reviewer/sub1", "security_reviewer/sub2"
+    ]  # fmt: skip
+    assert {f["agent"] for f in local["findings"]} <= {
+        "security_reviewer/sub1", "security_reviewer/sub2", "security_reviewer"
+    }  # fmt: skip
+    assert remote["spawn"]["spawned"] is True and remote["service"]["pid"] > 0
+    assert comparable(remote) == comparable(local)
+    # every agent (each sub-agent and the cross-file pass) builds its own scripted model, which
+    # starts at the top of the script: two calls each, three agents
+    assert remote["counts"]["model_calls"] == 6 and remote["own"]["own_model_calls"] == 2
+    assert local["own"]["own_model_calls"] == 2 and remote["counts"]["tool_calls"] == 3
+    # spawn_enabled false in the request turns it off in the service as well
+    off = service.serve(
+        build_request(
+            ctx, pr_title=title, pr_body=body, focus=FOCUS, evaluation=True, spawn_enabled=False
+        ).model_dump_json()
+    )
+    assert off.get("error") or off["spawn"] is None

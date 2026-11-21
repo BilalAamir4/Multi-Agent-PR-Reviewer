@@ -179,6 +179,7 @@ def run_fixture(name: str, base_url: str, tmp: Path, save=None) -> dict[str, Any
                 "pr_body": body,
                 "focus": focus,
                 "evaluation": True,
+                "spawn_enabled": False,  # the stage 3 parity case; spawning has its own test
             }
         )
         runs[label] = summarize(response, time.monotonic() - started)
@@ -188,7 +189,13 @@ def run_fixture(name: str, base_url: str, tmp: Path, save=None) -> dict[str, Any
               f"{runs[label]['model_calls']} model calls")  # fmt: skip
     started = time.monotonic()
     response = call_remote_security(
-        ctx, pr_title=title, pr_body=body, focus=focus, evaluation=True, base_url=base_url
+        ctx,
+        pr_title=title,
+        pr_body=body,
+        focus=focus,
+        evaluation=True,
+        spawn_enabled=False,
+        base_url=base_url,
     )
     runs["remote"] = summarize(response, time.monotonic() - started)
     if save:

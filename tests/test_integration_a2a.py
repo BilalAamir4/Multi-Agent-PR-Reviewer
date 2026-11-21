@@ -92,7 +92,13 @@ def test_a_stopped_service_is_remote_unavailable(tmp_path, ctx):
     a2a_client.forget_assistant_ids()
     with pytest.raises(RemoteUnavailable, match=f"not running at {url}"):
         call_remote_security(
-            ctx, pr_title="t", pr_body="b", focus=None, evaluation=True, base_url=url
+            ctx,
+            pr_title="t",
+            pr_body="b",
+            focus=None,
+            evaluation=True,
+            spawn_enabled=False,
+            base_url=url,
         )
 
 
@@ -109,7 +115,13 @@ def test_remote_response_equals_the_local_one(service, ctx, script, tmp_path):
     title, body = pr_text("dev_security_pr")
     a2a_client.forget_assistant_ids()
     remote = call_remote_security(
-        ctx, pr_title=title, pr_body=body, focus=FOCUS, evaluation=True, base_url=URL
+        ctx,
+        pr_title=title,
+        pr_body=body,
+        focus=FOCUS,
+        evaluation=True,
+        spawn_enabled=False,
+        base_url=URL,
     )
     SecurityReviewResponse.model_validate({k: v for k, v in remote.items() if k != "transport"})
     assert remote["service"]["name"] == "security_reviewer"
@@ -124,7 +136,9 @@ def test_a_bad_request_over_http_is_a_clean_error_response(service, ctx):
     import httpx
 
     aid = a2a_client.discover_assistant_id(URL)
-    req = a2a_client.build_request(ctx, pr_title="t", pr_body="b", focus=None, evaluation=True)
+    req = a2a_client.build_request(
+        ctx, pr_title="t", pr_body="b", focus=None, evaluation=True, spawn_enabled=False
+    )
     bad = req.model_copy(update={"workspace_sha256": "0" * 64})
     r = httpx.post(
         f"{URL}/a2a/{aid}",
