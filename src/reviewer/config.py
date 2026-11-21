@@ -30,7 +30,8 @@ class AgentLimits(BaseModel):
 
 
 class LimitsConfig(BaseModel):
-    """``limits.<agent name>``: the stage 1 single agent and the stage 2 specialists."""
+    """``limits.<agent name>``: the stage 1 single agent, the stage 2 specialists and the
+    orchestrator."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -38,6 +39,7 @@ class LimitsConfig(BaseModel):
     bug_reviewer: AgentLimits
     security_reviewer: AgentLimits
     test_reviewer: AgentLimits
+    orchestrator: AgentLimits
 
     def for_agent(self, name: str) -> AgentLimits:
         if name not in type(self).model_fields:

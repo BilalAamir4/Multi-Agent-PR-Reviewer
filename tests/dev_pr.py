@@ -9,6 +9,8 @@ None of them is part of the evaluation.
 - ``dev_tests_pr``: a weakened test and a new helper with a bug that ``test_clamp`` catches.
 - ``dev_docs_pr``: ``README.md`` and ``docs/usage.md`` only (for the stage 2B routing test).
 - ``dev_risky_pr``: SQL, a credential, logic and tests at once (for the stage 2B routing test).
+- ``dev_logic_pr``: a logic-only change with no security surface: a wrong perimeter helper and a
+  weak test (stage 2B, informational: does the orchestrator skip the security reviewer?).
 """
 
 from __future__ import annotations
@@ -35,6 +37,10 @@ PR_TEXT: dict[str, tuple[str, str]] = {
         "Adds median(), moves clamp's limiting into a helper and simplifies a test.",
     ),
     "dev_docs_pr": ("Improve the README and usage docs", "Documentation only."),
+    "dev_logic_pr": (
+        "Add rectangle_perimeter() and average_side()",
+        "Adds two geometry helpers and tests for them.",
+    ),
     "dev_risky_pr": (
         "Add per-account entries, running balances and a nightly sync URL",
         "Adds entries_for(), running_balances() and sync_url(), and updates the report tests.",

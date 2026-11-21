@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from reviewer.agents.base import PROMPTS_DIR, AgentSpec, ReviewResult, run_agent
 from reviewer.config import ReviewConfig, load_review_config
 from reviewer.models import QuotaRouter
@@ -88,9 +90,11 @@ def run_specialist(
     item_id: str | None = None,
     evaluation: bool = False,
     clock: Callable[[], float] = time.monotonic,
+    parent_config: RunnableConfig | None = None,
 ) -> ReviewResult:
     """Run one specialist on the pull request in ``ctx`` (never raises for model, quota or agent
-    failures; see ``run_agent``)."""
+    failures; see ``run_agent``). ``parent_config`` is the orchestrator's tool-call config, which
+    makes the run its child in LangSmith (decision 0009)."""
     return run_agent(
         specialist_spec(name),
         ctx,
@@ -99,6 +103,7 @@ def run_specialist(
         item_id=item_id,
         evaluation=evaluation,
         clock=clock,
+        parent_config=parent_config,
     )
 
 
@@ -143,6 +148,7 @@ def run_security_review(
     *,
     router: QuotaRouter | None = None,
     clock: Callable[[], float] = time.monotonic,
+    parent_config: RunnableConfig | None = None,
 ) -> dict[str, Any]:
     """The security specialist's whole job as one call: JSON-serializable dict in and out.
 
@@ -150,7 +156,8 @@ def run_security_review(
     ``pr_body``, ``focus`` (string or null) and ``evaluation`` (bool). Response: ``findings``
     (``Finding`` dicts), ``dropped``, ``status``, ``notes``, ``model_id``, ``prompt_version``,
     ``counts`` and the other fields of ``result_to_response``. ``router`` defaults to
-    ``QuotaRouter(evaluation=request["evaluation"])``."""
+    ``QuotaRouter(evaluation=request["evaluation"])``. ``router``, ``clock`` and ``parent_config``
+    are local-call options, not part of the JSON request."""
     missing = sorted(REQUEST_KEYS - set(request))
     extra = sorted(set(request) - REQUEST_KEYS)
     if missing or extra:
@@ -169,5 +176,6 @@ def run_security_review(
         router=router,
         evaluation=evaluation,
         clock=clock,
+        parent_config=parent_config,
     )
     return result_to_response(result)

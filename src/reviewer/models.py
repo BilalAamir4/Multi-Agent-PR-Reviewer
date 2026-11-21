@@ -272,21 +272,46 @@ type WaitReason = Literal["rate_limiter", "retry_minute", "retry_server"]
 
 @dataclass(frozen=True)
 class Wait:
+    """One wait. ``end`` is when it finished on the recording clock (``time.monotonic`` unless the
+    caller passes its own), so ``[end - seconds, end]`` is the interval it covered. ``nested`` is
+    true for a wait forwarded from a child review's log (decision 0009)."""
+
     model: str
     reason: WaitReason
     seconds: float
+    end: float = 0.0
+    nested: bool = False
 
 
 class WaitLog:
-    """Every wait in one review (D7). Reports subtract ``total()`` from the review time."""
+    """Every wait in one review (D7). Reports subtract the waiting from the review time.
 
-    def __init__(self) -> None:
+    Logs nest (decision 0009): a log made while another is current (``review_waits()``) or given a
+    ``parent`` forwards every wait it records to that parent, which stores it marked ``nested``.
+    A wait is therefore stored once per log on its path to the root and counted once in each log's
+    own totals, however many threads the children ran in. ``total()`` / ``by_reason()`` add the
+    waits up; ``wall()`` is the time during which at least one wait was in progress (the union of
+    the wait intervals), which is what D7 subtracts when children wait in parallel."""
+
+    def __init__(self, parent: WaitLog | None = None) -> None:
         self._lock = threading.Lock()
         self._waits: list[Wait] = []
+        self.parent = parent
 
-    def record(self, model: str, reason: WaitReason, seconds: float) -> None:
+    def record(
+        self,
+        model: str,
+        reason: WaitReason,
+        seconds: float,
+        end: float | None = None,
+        *,
+        nested: bool = False,
+    ) -> None:
+        end = time.monotonic() if end is None else end
         with self._lock:
-            self._waits.append(Wait(model, reason, seconds))
+            self._waits.append(Wait(model, reason, seconds, end, nested))
+        if self.parent is not None:
+            self.parent.record(model, reason, seconds, end, nested=True)
 
     @property
     def waits(self) -> list[Wait]:
@@ -294,8 +319,14 @@ class WaitLog:
             return list(self._waits)
 
     def total(self) -> float:
+        """All waits added up, children's included."""
         with self._lock:
             return sum(w.seconds for w in self._waits)
+
+    def own_total(self) -> float:
+        """Waits recorded directly in this review, not forwarded from a child."""
+        with self._lock:
+            return sum(w.seconds for w in self._waits if not w.nested)
 
     def by_reason(self) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -303,18 +334,47 @@ class WaitLog:
             out[w.reason] = out.get(w.reason, 0.0) + w.seconds
         return out
 
+    def wall(self) -> float:
+        """Seconds during which at least one wait was in progress (union of the intervals)."""
+        spans = sorted((w.end - w.seconds, w.end) for w in self.waits if w.seconds > 0)
+        total = 0.0
+        cur_start = cur_end = None
+        for start, end in spans:
+            if cur_end is None or start > cur_end:
+                if cur_end is not None:
+                    total += cur_end - cur_start
+                cur_start, cur_end = start, end
+            else:
+                cur_end = max(cur_end, end)
+        if cur_end is not None:
+            total += cur_end - cur_start
+        return total
+
 
 _current_waits: ContextVar[WaitLog | None] = ContextVar("reviewer_wait_log", default=None)
 
 
 @contextmanager
-def review_waits() -> Iterator[WaitLog]:
+def review_waits(parent: WaitLog | None = None) -> Iterator[WaitLog]:
     """Scope a new ``WaitLog`` to the current context (one review). Parallel reviews in their own
-    threads or contexts get separate logs."""
-    wait_log = WaitLog()
+    threads or contexts get separate logs. The new log nests under ``parent``, or under the log
+    that is current when this is entered (so a specialist's review counts toward the
+    orchestrator's, also from a worker thread that copied the context)."""
+    wait_log = WaitLog(parent if parent is not None else _current_waits.get())
     token = _current_waits.set(wait_log)
     try:
         yield wait_log
+    finally:
+        _current_waits.reset(token)
+
+
+@contextmanager
+def attach_waits(wait_log: WaitLog | None) -> Iterator[None]:
+    """Make ``wait_log`` the current log in this thread (for code that runs in a thread that did
+    not copy the context). ``review_waits()`` inside then nests under it."""
+    token = _current_waits.set(wait_log)
+    try:
+        yield
     finally:
         _current_waits.reset(token)
 
@@ -323,13 +383,16 @@ def current_wait_log() -> WaitLog | None:
     return _current_waits.get()
 
 
-def record_wait(model: str, reason: WaitReason, seconds: float) -> None:
+def record_wait(
+    model: str, reason: WaitReason, seconds: float, *, end: float | None = None
+) -> None:
     """Add a wait to the current review's log. Zero waits and waits outside a review are not
-    recorded (they are still logged at debug level)."""
+    recorded (they are still logged at debug level). ``end`` is the clock reading when the wait
+    finished (default ``time.monotonic()``)."""
     log.debug("wait %.2fs on %s (%s)", seconds, model, reason)
     wait_log = _current_waits.get()
     if wait_log is not None and seconds > 0:
-        wait_log.record(model, reason, seconds)
+        wait_log.record(model, reason, seconds, end)
 
 
 def total_wait_seconds() -> float:
@@ -357,6 +420,10 @@ class RateLimiter:
         self._sleep = sleep
         self._lock = threading.Lock()
         self._starts: deque[float] = deque()
+
+    def now(self) -> float:
+        """The limiter's clock, so waits can be stamped on the same clock."""
+        return self._clock()
 
     def acquire(self) -> float:
         """Block until a request may start; return the seconds waited."""
@@ -720,7 +787,7 @@ class QuotaRouter:
         retries = 0
         while True:
             waited = self.limiter(model).acquire()
-            record_wait(model, "rate_limiter", waited)
+            record_wait(model, "rate_limiter", waited, end=self._clock())
             try:
                 return task(chat_model, model)
             except Exception as err:
@@ -749,5 +816,5 @@ class QuotaRouter:
                 delay = min(retry_after_seconds(err) or backoff, BACKOFF_CAP_S)
                 why: WaitReason = "retry_minute" if kind is ErrorKind.MINUTE else "retry_server"
                 self._sleep(delay)
-                record_wait(model, why, delay)
+                record_wait(model, why, delay, end=self._clock())
                 retries += 1

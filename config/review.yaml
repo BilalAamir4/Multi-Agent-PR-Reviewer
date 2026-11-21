@@ -20,3 +20,8 @@ limits:
     max_model_calls: 20
     max_tool_calls: 30
     max_run_tests_calls: 3
+  # The orchestrator's own calls; the specialists' calls count in their own limits. Its three
+  # specialist tools count toward max_tool_calls (decision 0009).
+  orchestrator:
+    max_model_calls: 8
+    max_tool_calls: 12

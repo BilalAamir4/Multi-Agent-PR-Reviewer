@@ -1,0 +1,44 @@
+diff --git a/geometry/shapes.py b/geometry/shapes.py
+index 07bcb2f..5d5174e 100644
+--- a/geometry/shapes.py
++++ b/geometry/shapes.py
+@@ -1,4 +1,4 @@
+-"""Areas of simple shapes."""
++"""Areas and perimeters of simple shapes."""
+ 
+ 
+ def rectangle_area(width: float, height: float) -> float:
+@@ -7,3 +7,11 @@ def rectangle_area(width: float, height: float) -> float:
+ 
+ def triangle_area(base: float, height: float) -> float:
+     return base * height / 2
++
++
++def rectangle_perimeter(width: float, height: float) -> float:
++    return width + height
++
++
++def average_side(width: float, height: float) -> float:
++    return rectangle_perimeter(width, height) / 4
+diff --git a/tests/test_shapes.py b/tests/test_shapes.py
+index cd3aa5a..5ceb97c 100644
+--- a/tests/test_shapes.py
++++ b/tests/test_shapes.py
+@@ -1,4 +1,4 @@
+-from geometry.shapes import rectangle_area, triangle_area
++from geometry.shapes import average_side, rectangle_area, rectangle_perimeter, triangle_area
+ 
+ 
+ def test_rectangle_area():
+@@ -7,3 +7,11 @@ def test_rectangle_area():
+ 
+ def test_triangle_area():
+     assert triangle_area(3, 4) == 6
++
++
++def test_rectangle_perimeter():
++    assert rectangle_perimeter(3, 4) > 0
++
++
++def test_average_side():
++    assert average_side(3, 4) == 3.5

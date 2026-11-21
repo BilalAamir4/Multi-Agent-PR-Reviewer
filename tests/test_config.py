@@ -19,6 +19,7 @@ LIMITS = (
     "  security_reviewer:\n    max_model_calls: 15\n    max_tool_calls: 25\n"
     "  test_reviewer:\n    max_model_calls: 20\n    max_tool_calls: 30\n"
     "    max_run_tests_calls: 3\n"
+    "  orchestrator:\n    max_model_calls: 8\n    max_tool_calls: 12\n"
 )
 
 

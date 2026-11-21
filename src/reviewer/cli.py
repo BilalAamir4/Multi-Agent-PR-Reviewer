@@ -5,11 +5,13 @@
         [--debug]
     uv run reviewer review --item item_001 [--out PATH] [--eval-mode] [--debug]
 
-``--agent`` is ``single`` (the default, the stage 1 baseline) or one of the specialists
-``bug_reviewer``, ``security_reviewer``, ``test_reviewer``. ``--focus`` is for specialists only.
+``--agent`` is ``single`` (the default, the stage 1 baseline), one of the specialists
+``bug_reviewer``, ``security_reviewer``, ``test_reviewer``, or ``orchestrator`` (stage 2B: plans,
+calls the specialists as tools, merges their findings). ``--focus`` is for specialists only.
 ``--sandbox-repo`` names an ``eval/repos.yaml`` entry whose image ``run_tests`` uses (a dataset
 item uses its own repository's entry). Specialists are not run on dataset items before the
-stage 5 evaluation, so ``--item`` works only with ``--agent single``.
+stage 5 evaluation, and neither is the orchestrator (``eval.run --config orchestrator`` runs it
+there), so ``--item`` works only with ``--agent single``.
 
 Exit codes: 0 complete, 5 partial, 3 quota_paused, 4 limit_reached, 1 error (2 for bad
 arguments).
@@ -29,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+from reviewer.agents.orchestrator import OrchestratorResult, orchestrate
 from reviewer.agents.single import ReviewResult, review
 from reviewer.agents.specialists import NAMES as SPECIALISTS
 from reviewer.agents.specialists import run_specialist
@@ -38,7 +41,8 @@ from reviewer.tools import ReviewContext, SandboxSpec
 
 PAKISTAN = ZoneInfo("Asia/Karachi")
 EXIT_CODES = {"complete": 0, "partial": 5, "quota_paused": 3, "limit_reached": 4, "error": 1}
-AGENTS = ("single", *SPECIALISTS)
+ORCHESTRATOR = "orchestrator"
+AGENTS = ("single", *SPECIALISTS, ORCHESTRATOR)
 
 
 def make_router(evaluation: bool) -> QuotaRouter:
@@ -127,10 +131,81 @@ def format_report(result: ReviewResult) -> str:
     return "\n".join(lines)
 
 
+def format_orchestrator_report(result: OrchestratorResult) -> str:
+    """The orchestrator's plan, the merged findings with the agent that produced each, each
+    specialist's status and the totals (calls, tokens, waits, net time)."""
+    lines = ["plan:"]
+    if result.plan:
+        for e in result.plan:
+            lines.append(f"  {e.specialist}: {'called' if e.called else 'skipped'}: {e.reason}")
+    else:
+        lines.append("  (no plan: the orchestrator did not finish)")
+    lines.append("")
+    if result.findings:
+        rows = [("agent", "file:lines", "category", "severity", "conf", "title")]
+        for f in result.findings:
+            span = (
+                str(f.line_start) if f.line_start == f.line_end else f"{f.line_start}-{f.line_end}"
+            )
+            rows.append(
+                (
+                    f.agent,
+                    f"{f.file}:{span}",
+                    f.category,
+                    f.severity,
+                    f"{f.confidence:.2f}",
+                    f.title,
+                )
+            )
+        widths = [max(len(r[i]) for r in rows) for i in range(5)]
+        for r in rows:
+            cells = [c.ljust(w) for c, w in zip(r[:5], widths, strict=True)]
+            lines.append("  ".join([*cells, r[5]]))
+    else:
+        lines.append("No findings.")
+    lines.append("")
+    status = result.status
+    if result.limit:
+        status += f" ({result.limit} = {getattr(result.limits, result.limit)})"
+    lines.append(f"status:  {status}")
+    for note in result.notes:
+        lines.append(f"note:    {note}")
+    if result.summary:
+        lines.append(f"summary: {result.summary}")
+    if result.dropped:
+        counts: dict[str, int] = {}
+        for d in result.dropped:
+            counts[d.reason] = counts.get(d.reason, 0) + 1
+        lines.append("dropped: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    lines.append("specialists:")
+    if not result.children:
+        lines.append("  none called")
+    for c in result.children:
+        lines.append(
+            f"  {c.agent}: {c.status}, {len(c.findings)} finding(s), {c.model_calls} model / "
+            f"{c.tool_calls} tool calls, {c.input_tokens} in / {c.output_tokens} out, "
+            f"{c.net_duration_s:.1f}s net + {c.wait_s:.1f}s waiting"
+        )
+    lines += [
+        f"model:   {result.model_id or '-'} (prompt {result.prompt_version})",
+        f"calls:   {result.model_calls} model, {result.tool_calls} tool in total "
+        f"(orchestrator alone: {result.own_model_calls} model, {result.own_tool_calls} tool)",
+        f"tokens:  {result.input_tokens} in, {result.output_tokens} out in total "
+        f"(orchestrator alone: {result.own_input_tokens} in, {result.own_output_tokens} out)",
+        f"waits:   {result.wait_s_wall:.1f}s wall-clock (at least one wait in progress), "
+        f"{result.wait_s_sum:.1f}s summed over all waits",
+        f"time:    {result.net_duration_s:.1f}s net (total minus wall-clock waits), "
+        f"{result.duration_s:.1f}s total",
+    ]
+    if result.langsmith_run_id:
+        lines.append(f"trace:   LangSmith run {result.langsmith_run_id}")
+    return "\n".join(lines)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reviewer", description="Review a Python pull request.")
     sub = parser.add_subparsers(dest="command", required=True)
-    r = sub.add_parser("review", help="review one pull request with one agent")
+    r = sub.add_parser("review", help="review one pull request with one agent or the team")
     r.add_argument("--agent", choices=AGENTS, default="single", help="which agent reviews")
     r.add_argument("--workspace", type=Path, help="checkout of the repository after the PR")
     r.add_argument("--diff", type=Path, help="the PR's unified diff")
@@ -153,9 +228,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.item and not (args.workspace and args.diff):
         parser.error("give --item, or both --workspace and --diff")
     if args.item and args.agent != "single":
-        parser.error("specialists are not run on dataset items before the stage 5 evaluation")
-    if args.focus and args.agent == "single":
-        parser.error("--focus is for the specialists, not the single agent")
+        parser.error(
+            "specialists and the orchestrator are not run on dataset items before the stage 5 "
+            "evaluation"
+        )
+    if args.focus and args.agent in ("single", ORCHESTRATOR):
+        parser.error("--focus is for the specialists, not the single agent or the orchestrator")
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING)
     load_dotenv(repo_root() / ".env")
 
@@ -170,6 +248,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         router = make_router(args.eval_mode)
         if args.agent == "single":
             result = review(ctx, title, body, router, item_id=args.item)
+        elif args.agent == ORCHESTRATOR:
+            result = orchestrate(ctx, title, body, router, item_id=args.item)
         else:
             result = run_specialist(
                 args.agent,
@@ -190,7 +270,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {type(e).__name__}: {e}".splitlines()[0], file=sys.stderr)
         return 1
 
-    print(format_report(result))
+    print(
+        format_orchestrator_report(result)
+        if isinstance(result, OrchestratorResult)
+        else format_report(result)
+    )
     if result.status == "quota_paused" and result.reset_at is not None:
         print(f"quota paused: {result.model_id} resets at {format_reset(result.reset_at)}")
     elif result.status == "error":

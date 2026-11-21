@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cache
@@ -39,6 +39,9 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.outputs import LLMResult
+from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.config import merge_configs
+from langchain_core.tools import BaseTool
 from langsmith.utils import tracing_is_enabled
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -193,14 +196,55 @@ class ReviewResult(BaseModel):
 
 class _UsageCounter(BaseCallbackHandler):
     """Counts completed model calls, tool runs and ``usage_metadata`` tokens for one attempt.
-    Tools may run in parallel threads, hence the lock."""
+    Tools may run in parallel threads, hence the lock.
 
-    def __init__(self, attempt: Attempt) -> None:
+    Callbacks in a run config are inherited by every child run, so an agent that calls another
+    agent inside a tool would also see the child's model and tool events. ``foreign_tools`` names
+    the tools whose descendants belong to another agent (the orchestrator's specialist tools):
+    the tool call itself is counted, everything below it is not (decision 0009). The handler
+    follows ``parent_run_id`` links to tell."""
+
+    def __init__(self, attempt: Attempt, foreign_tools: frozenset[str] = frozenset()) -> None:
         self.attempt = attempt
+        self.foreign_tools = foreign_tools
         self._lock = threading.Lock()
         self._tools: Counter[str] = Counter()
+        self._parents: dict[Any, Any] = {}
+        self._foreign_runs: set[Any] = set()
 
-    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+    def _link(self, run_id: Any, parent_run_id: Any) -> None:
+        if self.foreign_tools:
+            with self._lock:
+                self._parents[run_id] = parent_run_id
+
+    def _below_foreign(self, run_id: Any) -> bool:
+        """True when a strict ancestor of ``run_id`` is a foreign tool run."""
+        if not self._foreign_runs:
+            return False
+        with self._lock:
+            cur = self._parents.get(run_id)
+            for _ in range(200):
+                if cur is None:
+                    return False
+                if cur in self._foreign_runs:
+                    return True
+                cur = self._parents.get(cur)
+        return False
+
+    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs: Any):
+        self._link(run_id, parent_run_id)
+
+    def on_chat_model_start(
+        self, serialized, messages, *, run_id, parent_run_id=None, **kwargs: Any
+    ) -> None:
+        self._link(run_id, parent_run_id)
+
+    def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id=None, **kwargs: Any):
+        self._link(run_id, parent_run_id)
+
+    def on_llm_end(self, response: LLMResult, *, run_id=None, **kwargs: Any) -> None:
+        if self._below_foreign(run_id):
+            return
         tin = tout = 0
         for gens in response.generations:
             for gen in gens:
@@ -212,9 +256,22 @@ class _UsageCounter(BaseCallbackHandler):
             self.attempt.input_tokens += tin
             self.attempt.output_tokens += tout
 
-    def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
+    def on_tool_start(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        run_id=None,
+        parent_run_id=None,
+        **kwargs: Any,
+    ) -> None:
+        self._link(run_id, parent_run_id)
+        if self._below_foreign(run_id):
+            return
         name = (serialized or {}).get("name") or kwargs.get("name") or "unknown"
         with self._lock:
+            if name in self.foreign_tools:
+                self._foreign_runs.add(run_id)
             self._tools[name] += 1
             self.attempt.tool_calls = dict(sorted(self._tools.items()))
 
@@ -287,7 +344,7 @@ class _PerCallRateLimit(AgentMiddleware):
         else:
             waited = self.limiter.acquire()
             if self.wait_log is not None and waited > 0:
-                self.wait_log.record(self.model_id, "rate_limiter", waited)
+                self.wait_log.record(self.model_id, "rate_limiter", waited, self.limiter.now())
         return handler(request)
 
 
@@ -306,8 +363,13 @@ def build_agent(
     ctx: ReviewContext,
     notes: ToolNotes,
     extra_middleware: list[AgentMiddleware] | None = None,
+    *,
+    extra_tools: Sequence[BaseTool] = (),
+    response_schema: type[BaseModel] = ReviewOutput,
 ) -> tuple[Any, _ModelCallLimit, _ToolCallLimit]:
-    tools = make_tools(ctx, spec.tools, notes)
+    """``extra_tools`` are ready-made tools (the orchestrator's specialist tools) that count
+    toward the tool-call limit; ``response_schema`` is the structured final answer."""
+    tools = [*make_tools(ctx, spec.tools, notes), *extra_tools]
     limits = spec.limits
     model_limit = _ModelCallLimit(limits.max_model_calls)
     tool_limit = _ToolCallLimit(limits.max_tool_calls, frozenset(t.name for t in tools))
@@ -319,7 +381,7 @@ def build_agent(
         chat_model,
         tools=tools,
         system_prompt=spec.system_prompt(),
-        response_format=ToolStrategy(ReviewOutput),
+        response_format=ToolStrategy(response_schema),
         middleware=[*middleware, *(extra_middleware or [])],
         name=spec.name,
     )
@@ -341,9 +403,12 @@ def run_agent(
     item_id: str | None = None,
     evaluation: bool = False,
     clock: Callable[[], float] = time.monotonic,
+    parent_config: RunnableConfig | None = None,
 ) -> ReviewResult:
-    """Run one agent on the pull request in ``ctx``. Never raises for a model, quota or agent
-    failure: those become the result's ``status``. ``evaluation`` must match
+    """Run one agent on the pull request in ``ctx``. ``parent_config`` is the ``RunnableConfig``
+    of the tool call that runs this agent (the orchestrator's specialist tools), so the run is a
+    child of that call in LangSmith and in the callback tree. Never raises for a model, quota or
+    agent failure: those become the result's ``status``. ``evaluation`` must match
     ``router.evaluation`` (a guard against labelling a normal run as an evaluation run or the
     other way round). ``clock`` measures ``duration_s`` (tests pass the fake clock their rate
     limiters use)."""
@@ -379,6 +444,8 @@ def run_agent(
             },
             "recursion_limit": recursion_limit(limits),
         }
+        if parent_config is not None:
+            config = merge_configs(parent_config, config)
         try:
             state = agent.invoke({"messages": [HumanMessage(user_message)]}, config=config)
         except Exception as e:

@@ -1,0 +1,19 @@
+{
+  "note": "Synthetic development fixture (stage 2B). Not part of the evaluation dataset. Informational only: no test asserts that a defect is found. A logic-only change with no security surface: used to record whether the orchestrator skips the security reviewer.",
+  "defects": [
+    {
+      "file": "geometry/shapes.py",
+      "line_start": 13,
+      "line_end": 13,
+      "kind": "other",
+      "description": "rectangle_perimeter() returns width + height, not 2 * (width + height)."
+    },
+    {
+      "file": "tests/test_shapes.py",
+      "line_start": 13,
+      "line_end": 13,
+      "kind": "ineffective_test",
+      "description": "test_rectangle_perimeter only checks the result is positive."
+    }
+  ]
+}

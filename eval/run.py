@@ -3,6 +3,10 @@
     uv run python -m eval.run --config single [--items item_001 item_003 ...] [--force]
         [--reason TEXT]
 
+``--config`` is ``single`` (stage 1) or ``orchestrator`` (stage 2B: the orchestrator calling the
+specialists; its first run on the dataset is the stage 5 evaluation). The orchestrator's run
+file also holds its plan and its children's full results, and its ``wait_s_wall``.
+
 Always uses ``QuotaRouter(evaluation=True)``: one pinned model, no fallback (D4). For each item
 it writes
 
@@ -32,12 +36,13 @@ from dotenv import load_dotenv
 
 from eval.ground_truth import DatasetError
 from eval.score import BUCKETS, MODES, score_config
+from reviewer.agents.orchestrator import OrchestratorResult, orchestrate
 from reviewer.agents.single import ReviewResult, review
 from reviewer.cli import format_reset, item_inputs
 from reviewer.config import load_models_config, load_review_config, repo_root
 from reviewer.models import QuotaRouter
 
-CONFIGS = ("single",)
+CONFIGS = ("single", "orchestrator")
 SCORED = ("complete", "limit_reached")
 
 
@@ -67,11 +72,23 @@ def run_item(
     limit_reached)."""
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     ctx, title, body = item_inputs(item_id)
-    result = review(ctx, title, body, router, item_id=item_id)
+    if config == "orchestrator":
+        result = orchestrate(ctx, title, body, router, item_id=item_id)
+    else:
+        result = review(ctx, title, body, router, item_id=item_id)
     run_path = out_dir / "runs" / f"{item_id}.json"
     run_log = _load_run_log(run_path)
+    extra: dict[str, Any] = {}
+    if isinstance(result, OrchestratorResult):
+        extra = {
+            "plan": [e.model_dump() for e in result.plan],
+            "children": {c.agent: c.status for c in result.children},
+            "wait_s_sum": result.wait_s_sum,
+            "wait_s_wall": result.wait_s_wall,
+        }
     run_log.append(
         {
+            **extra,
             "started_at": started_at,
             "reason": reason,
             "status": result.status,
@@ -113,7 +130,7 @@ def summary_markdown(
 ) -> str:
     models = load_models_config()
     spec = models.models[models.evaluation.model]
-    limits = load_review_config().limits.single
+    limits = load_review_config().limits.for_agent(config)
     agg = report["aggregates"]
     results = list(runs.values())
     model_ids = sorted({r.model_id for r in results if r.model_id})
@@ -174,6 +191,7 @@ def summary_markdown(
 
     net = [r.net_duration_s for r in results]
     wait = [r.wait_s for r in results]
+    wall = [r.wait_s_wall for r in results if isinstance(r, OrchestratorResult)]
     tin = [r.input_tokens for r in results]
     tout = [r.output_tokens for r in results]
     mean_in = statistics.mean(tin) if tin else None
@@ -192,7 +210,13 @@ def summary_markdown(
         "## Cost and time",
         "",
         f"- Median review time with rate-limit waiting removed (D7): {_fmt(_median(net), 1)} s; "
-        f"median wait beside it: {_fmt(_median(wait), 1)} s",
+        f"median wait beside it: {_fmt(_median(wait), 1)} s"
+        + (
+            "; for the orchestrator the removed wait is the wall-clock union of all waits "
+            f"(wait_s_wall, decision 0009), median {_fmt(_median(wall), 1)} s"
+            if wall
+            else ""
+        ),
         f"- Mean tokens per review: {_fmt(mean_in, 0)} input, {_fmt(mean_out, 0)} output",
         f"- Estimated cost per review: ${_fmt(cost, 5)} at ${_fmt(spec.price_input_per_mtok)} / "
         f"${_fmt(spec.price_output_per_mtok)} per million input / output tokens (D5 estimate; the "
@@ -208,11 +232,12 @@ def summary_markdown(
     return "\n".join(out) + "\n"
 
 
-def load_runs(out_dir: Path) -> dict[str, ReviewResult]:
+def load_runs(out_dir: Path, config: str = "single") -> dict[str, ReviewResult]:
+    model = OrchestratorResult if config == "orchestrator" else ReviewResult
     runs: dict[str, ReviewResult] = {}
     for path in sorted((out_dir / "runs").glob("item_*.json")):
         data = json.loads(path.read_bytes())
-        runs[path.stem] = ReviewResult.model_validate(data["result"])
+        runs[path.stem] = model.model_validate(data["result"])
     return runs
 
 
@@ -220,7 +245,7 @@ def score_and_summarize(config: str, out_dir: Path, dataset: Path) -> str:
     report = score_config(dataset, out_dir)
     _write_json(out_dir / "score.json", report)
     today = datetime.now(UTC).date().isoformat()
-    text = summary_markdown(report, load_runs(out_dir), config, today)
+    text = summary_markdown(report, load_runs(out_dir, config), config, today)
     (out_dir / "summary.md").write_bytes(text.encode("utf-8"))
     return text
 

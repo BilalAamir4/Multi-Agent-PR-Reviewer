@@ -17,6 +17,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   `docs/decisions/0007-single-agent-baseline.md`.
 - Specialists, shared agent machinery, composed prompts, `run_tests`, the `partial` status:
   `docs/decisions/0008-specialists.md`.
+- Orchestrator, specialist tools and cache, merge, statuses, nested and parallel waits, routing
+  test: `docs/decisions/0009-orchestrator.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -54,7 +56,11 @@ uv run reviewer review --agent bug_reviewer|security_reviewer|test_reviewer --wo
     [--focus TEXT] [--sandbox-repo NAME] ...   # default --agent single; exit 5 = partial (D2b)
 uv run reviewer review --item item_001 [--out PATH] [--eval-mode]   # exit 0/3 quota/4 limit/1 error
 docker build -t mapr-sandbox-dev_fixture:local sandbox_images/dev_fixture   # run_tests on dev fixtures
+uv run reviewer review --agent orchestrator --workspace PATH --diff PATH `
+    [--sandbox-repo NAME] [--eval-mode] [--out PATH]   # plan, specialists as tools, merge; no --item
+uv run pytest -q -m integration tests/test_integration_orchestrator.py -s   # routing test (dev fixtures only)
 uv run python -m eval.run --config single [--items ...] [--force] [--reason TEXT]  # eval + score
+uv run python -m eval.run --config orchestrator ...   # same for the orchestrator; NOT before stage 5
 ```
 
 Free-tier budgets are small (Gemini 4 Hydrogen and the Flash group: 20 requests a day). Do not
@@ -87,9 +93,9 @@ run the model checks in loops.
   (`aa94f1ae2cf6`) and `limits.single` in `config/review.yaml`.
 - Prompts never contain ground truth, `eval/plants/`, `meta.json` fields other than
   `pr_title`/`pr_body`, or any mention of planted bugs, evaluation or scoring.
-- **Specialists are not run on evaluation items before stage 5.** Develop them only on the dev
-  fixtures in `tests/fixtures/dev_*` (`tests/dev_pr.py`); the CLI refuses `--item` with a
-  specialist. `single.md` stays one frozen file; it never uses `prompts/common/`.
+- **Specialists and the orchestrator are not run on evaluation items before stage 5.** Develop
+  them only on the dev fixtures in `tests/fixtures/dev_*` (`tests/dev_pr.py`); the CLI refuses
+  `--item` with a specialist or the orchestrator. `eval.run --config orchestrator` is for stage 5. `single.md` stays one frozen file; it never uses `prompts/common/`.
 - Do not add placeholder modules for later stages.
 
 ## Layout
@@ -107,9 +113,12 @@ run the model checks in loops.
   (`agent`, `notes`, status `partial`). `src/reviewer/agents/single.py`:
   `review(ctx, title, body, router)` on `base`. `src/reviewer/agents/specialists.py`:
   `specialist_spec`, `run_specialist(name, ctx, *, pr_title, pr_body, focus, router, ...)`,
-  `run_security_review(request: dict) -> dict` (stage 3). `src/reviewer/prompts/`: `single.md`
-  (frozen), `<specialist>.md` with `<!-- include: NAME -->` lines for `common/NAME.md`.
-  `src/reviewer/cli.py`.
+  `run_security_review(request: dict) -> dict` (stage 3). `src/reviewer/agents/orchestrator.py`:
+  `orchestrate(ctx, title, body, router, ...) -> OrchestratorResult` (plan, `children`, `own_*`
+  counters, `wait_s_sum`/`wait_s_wall`), `SpecialistCollector` (once per review, cache across S4
+  re-runs), `make_specialist_tools`, `merge_findings`, `check_plan`. `src/reviewer/prompts/`:
+  `single.md` (frozen), `<specialist>.md` and `orchestrator.md` with
+  `<!-- include: NAME -->` lines for `common/NAME.md`. `src/reviewer/cli.py`.
 - `src/reviewer/tools/`: `ReviewContext.from_paths(workspace, diff_path, sandbox=None)`, then
   `make_tools(ctx)` gives `list_changed_files`, `read_diff`, `read_file`, `search_code`,
   `run_ruff`, `run_bandit` (read-only, strings, `ERROR: ...` on failure; needs `rg` on PATH);
@@ -132,7 +141,7 @@ run the model checks in loops.
   `dev_fixture` in `repos.yaml` is the local image for the dev fixtures (`url: null`, only names
   in `LOCAL_REPOS`); `eval.repos.sandbox_spec(name)`, `item_sandbox(item_id)`,
   `dataset_repos()`.
-- `tests/fixtures/dev_{pr,security_pr,tests_pr,docs_pr,risky_pr}/`: synthetic dev fixtures
+- `tests/fixtures/dev_{pr,security_pr,tests_pr,docs_pr,risky_pr,logic_pr}/`: synthetic dev fixtures
   (`workspace/`, `pr.diff`, informational `expected.json`).
 
 ## Stage status
@@ -148,7 +157,8 @@ run the model checks in loops.
 | 1B One agent, CLI, evaluation runner, baseline | done (decision 0007) |
 | **Stage 1** | **complete** |
 | 2A Shared agent machinery, `run_tests`, three specialists | done (decision 0008) |
-| 2B Orchestrator calling the specialists, routing test | not started |
+| 2B Orchestrator calling the specialists, routing test | **2B partial** (decision 0009): docs-only skip passed 2/2; `dev_risky_pr` routed correctly 2/2 (all three specialists called) but never reached `complete` because of Gemini 503s; the complete-run criterion is still open |
+| **Stage 2** | **not complete** until `dev_risky_pr` ends `complete` twice |
 | 3 A2A | not started |
 | 4 Spawning workers | not started |
 | 5 Evaluation | not started |
