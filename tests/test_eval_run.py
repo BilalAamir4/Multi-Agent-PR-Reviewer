@@ -155,3 +155,44 @@ def test_quota_paused_stops_with_exit_3(env, capsys):
 def test_unknown_item_rejected(env):
     argv, *_ = env
     assert runner.main([*argv, "--items", "item_999"]) == 2
+
+
+# --- --max-calls guard (stage 5, decision 0015) ----------------------------------------------
+
+
+def test_max_calls_stops_before_the_item_that_would_pass_the_budget(env, capsys):
+    argv, out, calls, outcomes = env
+    outcomes["item_001"] = result("complete")  # 4 model calls
+    outcomes["item_002"] = result("complete")
+    # item_001: 0 + 10 (single default) <= 13 runs; item_002: 4 + 10 > 13 stops.
+    assert runner.main([*argv, "--max-calls", "13"]) == 3
+    assert calls == ["item_001"]
+    assert "budget reached; resume tomorrow" in capsys.readouterr().out
+    assert (out / "item_001.json").is_file() and not (out / "item_002.json").exists()
+    # Resuming the next day finishes the rest and writes the summary.
+    assert runner.main([*argv, "--max-calls", "13"]) == 0
+    assert calls == ["item_001", "item_002"]
+
+
+def test_max_calls_too_small_runs_nothing(env, capsys):
+    argv, out, calls, outcomes = env
+    assert runner.main([*argv, "--max-calls", "5"]) == 3
+    assert calls == []
+    assert "budget reached; resume tomorrow" in capsys.readouterr().out
+
+
+def test_max_calls_does_not_interrupt_a_started_item(env):
+    argv, out, calls, outcomes = env
+    outcomes["item_001"] = result("complete").model_copy(update={"model_calls": 99})
+    outcomes["item_002"] = result("complete")
+    assert runner.main([*argv, "--max-calls", "12"]) == 3
+    assert calls == ["item_001"]  # started within budget, finished, then the guard stopped
+    assert (out / "item_001.json").is_file()
+
+
+def test_no_max_calls_means_no_guard(env):
+    argv, out, calls, outcomes = env
+    outcomes["item_001"] = result("complete")
+    outcomes["item_002"] = result("complete")
+    assert runner.main(argv) == 0
+    assert calls == ["item_001", "item_002"]

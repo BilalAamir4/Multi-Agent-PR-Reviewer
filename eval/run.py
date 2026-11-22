@@ -1,7 +1,13 @@
 """Run one configuration over the dataset and score it (stage 1B; plan § Evaluation, D4, D7).
 
     uv run python -m eval.run --config single [--items item_001 item_003 ...] [--force]
-        [--reason TEXT]
+        [--reason TEXT] [--max-calls N]
+
+``--max-calls N`` (stage 5, decision 0015) is a call-budget guard: before each item the model calls
+used so far in this invocation plus that item's estimate (``eval.results_data.estimate_calls``)
+are compared with ``N``; if they would pass it the run stops cleanly with exit code 3 and
+"budget reached; resume tomorrow". An item that has started is never interrupted. Items reused
+under D6 cost nothing. ``quota_paused`` also exits with 3.
 
 ``--config`` is ``single`` (stage 1), ``orchestrator`` (stage 2B: the orchestrator calling the
 specialists; its first run on the dataset is the stage 5 evaluation) or ``subagents`` (stage 4A:
@@ -58,6 +64,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from eval.ground_truth import DatasetError
+from eval.results_data import estimate_calls
 from eval.score import BUCKETS, MODES, score_config
 from reviewer.agents.judge import run_judge
 from reviewer.agents.judging import JudgeStepResult
@@ -765,6 +772,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--items", nargs="+", help="item ids (default: every dataset item)")
     parser.add_argument("--force", action="store_true", help="re-run items already scored")
     parser.add_argument("--reason", default=None, help="why this run happens (recorded in run_log)")
+    parser.add_argument(
+        "--max-calls", type=int, default=None, metavar="N",
+        help="stop cleanly (exit 3) before an item that would take this invocation past N "
+        "model calls",
+    )  # fmt: skip
     parser.add_argument("--dataset", type=Path, default=root / "eval" / "dataset")
     parser.add_argument("--results", type=Path, default=root / "eval" / "results")
     args = parser.parse_args(argv)
@@ -810,11 +822,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
     router = QuotaRouter(evaluation=True)
     failed: list[str] = []
+    calls_used = 0  # model calls spent by this invocation (the --max-calls guard)
     for item_id in items:
         scored = out_dir / f"{item_id}.json"
         if scored.is_file() and not args.force:
             print(f"{item_id}: already scored, skipped (use --force to re-run)")
             continue
+        if args.max_calls is not None:
+            estimate = estimate_calls(args.results, args.dataset, args.config, item_id, all_items)
+            if calls_used + estimate > args.max_calls:
+                print(
+                    f"budget reached; resume tomorrow ({item_id}: {calls_used} calls used + "
+                    f"{estimate:.0f} estimated > --max-calls {args.max_calls})"
+                )
+                return 3
         reason = args.reason or ("re-run (--force)" if scored.is_file() else "first run")
         try:
             result = run_item(item_id, args.config, router, out_dir, reason, args.results)
@@ -822,8 +843,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{item_id}: error: {type(e).__name__}: {e}".splitlines()[0], file=sys.stderr)
             failed.append(item_id)
             continue
-        if args.config == "subagents" and load_reuse(out_dir).get(item_id):
+        reused_item = args.config == "subagents" and bool(load_reuse(out_dir).get(item_id))
+        if reused_item:
             print(f"{item_id}: reused from {REUSE_SOURCE} (no called specialist would spawn)")
+        else:
+            calls_used += result.model_calls
         print(
             f"{item_id}: {result.status}, {len(result.findings)} finding(s), "
             f"{result.model_calls} model / {result.tool_calls} tool calls, "
