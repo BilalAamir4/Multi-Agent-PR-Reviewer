@@ -202,3 +202,52 @@ defect was not reported in this run (informational; no prompt changed).
 | **total** | complete | 3 | 66 | 57 | 335673 / 4029 | 25.9 (wall waits 220.1) | 821.5 summed |
 
 Trace: LangSmith run `0658f63f-e965-46e8-adb1-8fe0ff5941b6` (project `multi-agent-pr-reviewer`); the key cannot read traces back (401), so only the run ids are recorded.
+
+## Stage 4C (2026-11-22): D12 counts the numbered diff only
+
+**What was wrong.** The token check estimated the specialist's prompt as the numbered diff **plus the
+full contents** of every area file (`_diff_and_content`), and the batch token budget did the same per
+file. Real modules are thousands of lines, so the estimate was far above 30K even for 2 files.
+
+**Evidence.** Dataset session E1 (decision 0014): `dataset_stats` showed every item spawning all three
+specialists, with estimates from about 31K (item_002, 2 files) to 156K tokens. Row 3 would have
+spawned on every item and the D6 reuse rule would never have applied.
+
+**Decision.** `should_spawn_for` estimates `estimate_tokens(numbered diffs of the area files)` and
+`plan_batches` uses the same diff-only estimate per file for `batch_token_budget`. A specialist reads
+the diff first and opens whole files only as needed, so the diff is what it must handle. Nothing else
+changes: the 30,000 and 20,000 numbers, the file-count rule (4), the pairing, the packing order, the
+caps and `config/review.yaml` are as before. Tests: `tests/test_subagents_batching.py` (huge diff
+spawns by tokens; huge files with a small diff do not spawn; large contents no longer force one file
+per batch). The test constants `HUGE` and `OVER` were raised (1500 to 2600 lines, 2500 to 3500) because
+they were sized for diff plus contents; the batching tests themselves are unchanged.
+
+**New per-item spawn table** (`uv run python -m eval.dataset_stats`; the bug reviewer's area; the
+security and test reviewers have the same area, so the decision is the same for all three):
+
+| Item | `.py` files | Diff tokens | Spawns | Trigger |
+| --- | --- | --- | --- | --- |
+| item_001 | 2 | 1807 | no | |
+| item_002 | 2 | 932 | no | |
+| item_003 | 4 | 1706 | yes | files |
+| item_004 | 8 | 6471 | yes | files |
+| item_005 | 8 | 3305 | yes | files |
+| item_006 | 9 | 4989 | yes | files |
+| item_007 | 12 | 15844 | yes | files |
+| item_008 | 8 | 4864 | yes | files |
+| item_009 | 9 | 19261 | yes | files |
+| item_010 | 4 | 6843 | yes | files |
+| item_011 | 2 | 1833 | no | |
+| item_012 | 2 | 1428 | no | |
+| item_013 | 11 | 9642 | yes | files |
+| item_014 | 11 | 7880 | yes | files |
+| item_015 | 10 | 5508 | yes | files |
+| item_016 | 9 | 12715 | yes | files |
+| item_017 | 4 | 4685 | yes | files |
+| item_018 | 4 | 2002 | yes | files |
+| item_019 | 3 | 1748 | no | |
+| item_020 | 2 | 2236 | no | |
+
+Items with 4 or more `.py` files spawn, the others do not; no exceptions. The token trigger fires on no
+dataset item, so on this dataset the file count alone decides, and D6 reuses the orchestrator results
+for item_001, 002, 011, 012, 019 and 020.

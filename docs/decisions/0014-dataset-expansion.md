@@ -3,6 +3,10 @@
 Date: 2026-11-22 · Status: accepted (sessions E1 and E2 done) · Implements: D5 (20
 items: 14 planted, 6 clean; 10 large, 4 medium, 6 small), D8, D9. Replaces no locked decision.
 
+> **Superseded (stage 4C, 2026-11-22):** the D12 spawn columns and notes below were computed with diff
+> plus full file contents. The decision now counts the diff only; the current per-item spawn table is
+> in decision 0012, "Stage 4C".
+
 Items item_006 to item_020 are added before stage 5's first run, in two sessions: **E1** builds
 item_006 to item_013 and **E2** builds item_014 to item_020. Recipes, `build_dataset` and the 12
 checks of `check_dataset` are those of session 0D (decisions 0004, 0005); no check was changed or

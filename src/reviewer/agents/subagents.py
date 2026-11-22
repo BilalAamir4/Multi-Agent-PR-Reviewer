@@ -52,7 +52,6 @@ from reviewer.config import AgentLimits, ReviewConfig, SpawnConfig, repo_root
 from reviewer.models import QuotaRouter, attach_waits, estimate_tokens, review_waits
 from reviewer.schemas import Finding
 from reviewer.tools import ReviewContext, ToolError, numbered_diff
-from reviewer.tools.files import _read_text, resolve_repo_path
 
 SUBAGENT_ROLE = "worker"  # the router chain in config/models.yaml (D4 pins one model in evaluation)
 SUBAGENT_LIMITS = "subagent"  # limits.subagent in config/review.yaml
@@ -84,20 +83,13 @@ def specialist_area(name: str, ctx: ReviewContext) -> list[str]:
     return sorted(f.path for f in ctx.files if f.is_python and f.status != "deleted")
 
 
-def _content(ctx: ReviewContext, path: str) -> str:
+def _diff_text(ctx: ReviewContext, path: str) -> str:
+    """The numbered diff of one file: the only text D12 counts (decision 0012, stage 4C). A
+    specialist reads the diff first and opens whole files only as needed."""
     try:
-        clean, target = resolve_repo_path(ctx, path)
-        return _read_text(target, clean)
-    except (ToolError, OSError):
-        return ""
-
-
-def _diff_and_content(ctx: ReviewContext, path: str) -> str:
-    try:
-        diff = numbered_diff(ctx, path)
+        return numbered_diff(ctx, path)
     except ToolError:
-        diff = ""
-    return diff + "\n" + _content(ctx, path)
+        return ""
 
 
 @dataclass(frozen=True)
@@ -115,10 +107,11 @@ class SpawnDecision:
 
 def should_spawn_for(name: str, ctx: ReviewContext, cfg: SpawnConfig) -> SpawnDecision:
     """Spawn when the area has ``min_py_files`` or more files, or when the estimated tokens of
-    the area's numbered diffs plus their full contents exceed ``max_specialist_prompt_tokens``.
+    the area's numbered diffs (the diff only, not whole files) exceed
+    ``max_specialist_prompt_tokens``.
     Does not look at ``cfg.enabled`` (the D6 reuse rule asks what *would* spawn)."""
     area = specialist_area(name, ctx)
-    tokens = estimate_tokens("\n".join(_diff_and_content(ctx, p) for p in area)) if area else 0
+    tokens = estimate_tokens("\n".join(_diff_text(ctx, p) for p in area)) if area else 0
     triggers = []
     if len(area) >= cfg.min_py_files:
         triggers.append("files")
@@ -243,7 +236,7 @@ def plan_batches(area: list[str], ctx: ReviewContext, cfg: SpawnConfig) -> Batch
 
     1. Related groups (``_groups``). 2. Packing (``_pack``): groups in ``(directory, first path)``
     order are filled into batches of at most ``max_files_per_subagent`` files and
-    ``batch_token_budget`` estimated tokens (numbered diff + file contents). 3. Cap: with more than
+    ``batch_token_budget`` estimated tokens (the numbered diff only). 3. Cap: with more than
     ``max_subagents`` batches the file limit is raised by 1 and the files are packed again until
     the count fits (``budget_exceeded`` records that this happened). Should the file limit reach
     the number of files with the count still over the cap (only the token budget can cause that),
@@ -251,7 +244,7 @@ def plan_batches(area: list[str], ctx: ReviewContext, cfg: SpawnConfig) -> Batch
     packing order; the result depends only on the input."""
     if not area:
         return BatchPlan((), cfg.max_files_per_subagent, False, False)
-    tokens = {p: estimate_tokens(_diff_and_content(ctx, p)) for p in area}
+    tokens = {p: estimate_tokens(_diff_text(ctx, p)) for p in area}
     groups = _groups(sorted(area))
     limit = cfg.max_files_per_subagent
     budget: float = cfg.batch_token_budget

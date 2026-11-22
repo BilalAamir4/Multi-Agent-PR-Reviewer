@@ -2,7 +2,8 @@
 
 Table-driven, no model, network or Docker call. A synthetic workspace and diff are written per
 case: every file is added with a chosen number of lines, so its estimated tokens are known to the
-order of magnitude (``estimate_tokens`` is ``ceil(len / 3)`` over the numbered diff plus the file).
+order of magnitude (``estimate_tokens`` is ``ceil(len / 3)`` over the numbered diff only; whole
+file contents are not counted, decision 0012 stage 4C).
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ from reviewer.config import SpawnConfig, load_review_config
 from reviewer.tools import ReviewContext
 
 CFG: SpawnConfig = load_review_config().spawn  # 4 files / 30000 tokens, 3 per batch, 5 batches
-SMALL = 10  # lines: about 100 tokens for the diff plus the file
-HUGE = 1500  # lines: about 16,000 tokens
-OVER = 2500  # lines: about 27,000 tokens, over batch_token_budget (20,000) on its own
+SMALL = 10  # lines: about 100 tokens of numbered diff
+HUGE = 2600  # lines: about 16,000 tokens of diff; two of them are over 30,000
+OVER = 3500  # lines: about 21,500 tokens, over batch_token_budget (20,000) on its own
 
 
 def _added(path: str, lines: int) -> str:
@@ -41,6 +42,28 @@ def _deleted(path: str, lines: int) -> str:
         f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n--- a/{path}\n+++ /dev/null\n"
         f"@@ -1,{lines} +0,0 @@\n{body}"
     )
+
+
+def _modified(path: str) -> str:
+    """A one-line change inside a file that is long on disk (the diff stays small)."""
+    return (
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+        "@@ -1,3 +1,3 @@\n v0 = 0\n-v1 = 1\n+v1 = 100\n v2 = 2\n"
+    )
+
+
+def make_ctx_long_files(tmp: Path, files: dict[str, int]):
+    """A context whose files have ``files`` ({path: line count}) lines on disk but whose diff only
+    changes one line in each."""
+    ws = tmp / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+    diff = ""
+    for path, n in files.items():
+        target = ws / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("".join(f"v{i} = {i}\n" for i in range(n)), encoding="utf-8")
+        diff += _modified(path)
+    return ReviewContext.from_text(ws, diff)
 
 
 def make_ctx(tmp: Path, files: dict[str, int], deleted: dict[str, int] | None = None):
@@ -75,7 +98,9 @@ def py(*names: str, n: int = SMALL) -> dict[str, int]:
     [
         pytest.param(py("a.py", "b.py", "c.py"), False, [], id="3 files: no spawn"),
         pytest.param(py("a.py", "b.py", "c.py", "d.py"), True, ["files"], id="4 files: by count"),
-        pytest.param({"a.py": HUGE, "b.py": HUGE}, True, ["tokens"], id="2 huge files: by tokens"),
+        pytest.param(
+            {"a.py": HUGE, "b.py": HUGE}, True, ["tokens"], id="2 files with a huge diff: by tokens"
+        ),
         pytest.param(
             {"a.py": HUGE, "b.py": HUGE, "c.py": SMALL, "d.py": SMALL},
             True,
@@ -94,6 +119,13 @@ def test_spawn_decision(tmp_path, files, spawn, triggers):
     assert d.py_files == len(d.area) == sum(1 for f in files if f.endswith(".py"))
     assert (d.min_py_files, d.max_specialist_prompt_tokens) == (4, 30000)
     assert (d.estimated_tokens > 30000) == ("tokens" in triggers)
+
+
+def test_huge_file_contents_with_a_small_diff_do_not_spawn(tmp_path):
+    ctx = make_ctx_long_files(tmp_path, {"a.py": 20000, "b.py": 20000})  # ~200k tokens on disk
+    d = should_spawn_for("bug_reviewer", ctx, CFG)
+    assert not d.spawn and list(d.triggers) == []
+    assert 0 < d.estimated_tokens < 1000
 
 
 def test_the_decision_records_both_values(tmp_path):
@@ -182,6 +214,13 @@ def test_a_single_oversized_file_gets_a_batch_of_its_own(tmp_path):
 def test_the_token_budget_closes_a_batch_before_the_file_limit(tmp_path):
     files = {"p/a.py": HUGE, "p/b.py": HUGE, "p/c.py": SMALL}  # 16k + 16k > 20k
     assert groups_of(tmp_path, files) == [["p/a.py"], ["p/b.py", "p/c.py"]]
+
+
+def test_large_file_contents_do_not_force_one_file_per_batch(tmp_path):
+    ctx = make_ctx_long_files(tmp_path, {"p/a.py": 20000, "p/b.py": 20000, "p/c.py": 20000})
+    batches = make_batches(specialist_area("bug_reviewer", ctx), ctx, CFG)
+    assert [list(b.files) for b in batches] == [["p/a.py", "p/b.py", "p/c.py"]]
+    assert not batches[0].over_budget
 
 
 def test_batches_are_numbered_from_one_in_packing_order(tmp_path):

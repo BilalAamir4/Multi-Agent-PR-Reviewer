@@ -224,7 +224,9 @@ run the model checks in loops.
 | **Stage 2** | **complete** |
 | 3 A2A | done (decision 0011): security specialist as a service; live parity passed on 3 dev fixtures and the remote end-to-end run ended `complete` (only if `docs/a2a-parity.json` and ADR 0011 record both) |
 | 4A Specialists spawn sub-agents, spawn switch, D6 reuse rule, timing criterion | done (decision 0012): parallel fan-out net 12.1 s vs 25.7 s sequential; orchestrator end-to-end on `dev_multi_pr` ended `partial` (see the ADR); re-run in 4B with a SQL surface added to the fixture and `limits.subagent` 15 / 20: `complete`, all three specialists spawned |
-| 4B StateGraph around the review, verifier, orchestrator as judge (row 4b) | code, tests and ADR 0013 done; **not done**: the orchestrator-as-judge half of the judge mix and the full-graph run on `dev_multi_pr` are pending (daily quota), commands under "Pending" in the ADR |
+| 4B StateGraph around the review, verifier, orchestrator as judge (row 4b) | done (decision 0013): both judges gave the same 4 verdicts on the judge mix; the full graph on `dev_multi_pr` ended `complete` (67 model calls) |
+| 4C D12 token check counts the numbered diff only (decision 0012, "Stage 4C") | done: items with 4 or more `.py` files spawn, the others do not |
+| **Stage 4** | **complete** |
 | Dataset E1 (item_006 to item_013) | done (decision 0014): 8 items, 12 checks pass for all 13 items |
 | Dataset E2 (item_014 to item_020) | done (decision 0014): 7 items, 12 checks pass for all 20 items; **dataset complete: 20 items** |
 | 5 Evaluation | not started |

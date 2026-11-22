@@ -5,7 +5,7 @@ verifier" runs on the saved findings of row 3), D11 (the evidence check runs bef
 routing doc S6 and S8 for the judge step. Replaces no locked decision. Adds the optional row 4b.
 
 Stage 4 is done when the Task 0 end-to-end run (decision 0012, "End to end again") and the full
-graph run below both ended `complete`. **Status: not done.** Task 0.4 ended `complete`; the full graph run on `dev_multi_pr` is pending (daily quota).
+graph run below both ended `complete`. **Status: done** (stage 4C, 2026-11-22): Task 0.4 ended `complete` and the full graph run on `dev_multi_pr` ended `complete` (3 of 4 expected defects kept; the cross-file one was not found).
 
 ## The review graph (`src/reviewer/graph.py`)
 
@@ -149,38 +149,69 @@ decision 0010, which would punish the model for an omission, not an infrastructu
   | `test_cart.py:29-30` ineffective_test | wrong | rejected | the test asserts the total is 360, which verifies the discount |
 
   Kept 2, dropped 2; no prompt revision was made.
-- **Judge mix, orchestrator-as-judge half:** pending (daily quota). The first attempt got a daily-quota
-  429 on its first call (0 model calls made).
-- **Full graph on `dev_multi_pr`** (`--judge verifier`, remote security, spawning on): pending (daily quota).
+- **Judge mix, orchestrator-as-judge half** (stage 4C, 2026-11-22, evaluation mode, status `complete`,
+  5 model calls / 4 tool calls, 14,725 in / 403 out tokens, 12.0 s net + 0.0 s waiting, prompt
+  `ec54742e1b4c`, trace `930ee272-c7b4-4273-8142-040773bf5380`). Same four findings, next to the
+  verifier's verdicts above:
+
+  | Finding | Really | Verifier | Judge (orchestrator) |
+  | --- | --- | --- | --- |
+  | `catalog.py:36` off_by_one | real | confirmed: slice end `start + size - 1` yields `size - 1` items | confirmed: the slice excludes the last element of the page |
+  | `cart.py:22-23` missing_none_check | real | confirmed: `coupon.percent` read without a None check | confirmed: `find(code)` can return `None`, then `.percent` raises `AttributeError` |
+  | `cart.py:18` missing_none_check | wrong | rejected: line 16 already raises `KeyError` | rejected: `add` already checks `self.catalog.find(sku) is None` |
+  | `test_cart.py:29-30` ineffective_test | wrong | rejected: the test asserts 360, verifying the discount | rejected: the test asserts the total is 360, so it is effective |
+
+  Both judges kept 2 and dropped 2, the same four verdicts. Verifier: 15 model calls, 31,211 in / 548 out
+  tokens (4 checks). Judge: 5 model calls, 14,725 in / 403 out tokens (one run). No prompt revision.
+- **Full graph on `dev_multi_pr`** (stage 4C; `--judge verifier`, remote security, spawning on,
+  `--sandbox-repo dev_fixture`, evaluation mode): status **`complete`**, root run `review-graph`
+  `25f148be-1a90-475f-bd8a-d9c0d83978e9`. See "Full graph run" below.
 - **Accounting regression** (`tests/test_graph.py`, both judges, tracing off and on): passes. Review stage
   9 model / 7 tool calls; verifier step 4 / 2 (two checks of 2 calls); judge step 2 / 1; totals are the plain
   sum; the step's summed wait covers its children; one root run `review-graph` and one `trace_id`.
 
-## Pending
+## Full graph run (stage 4C)
 
-Quota: Gemini 3.1 Flash Lite's daily limit resets at 08:00 UTC (midnight Pacific); `quota_state.json`
-shows when. About 85 model calls are needed (about 81 of the 190-call budget were used). From the
-repository root, PowerShell:
+Hierarchy (model calls / tool calls, tokens in / out, findings):
 
-```powershell
-# 1. orchestrator-as-judge half of the judge mix (about 6 calls)
-uv run python scripts/check_judges.py --judge orchestrator
+| Agent | Status | Calls | Tokens | Findings |
+| --- | --- | --- | --- | --- |
+| orchestrator (review stage total) | complete | 59 / 50 | 270,204 / 3,823 | 3 after merge |
+| &nbsp;&nbsp;bug_reviewer | complete | 17 / 14 | 75,195 / 1,515 | 3 |
+| &nbsp;&nbsp;&nbsp;&nbsp;bug_reviewer/sub1 | complete | 5 / 4 | 20,121 / 397 | 0 |
+| &nbsp;&nbsp;&nbsp;&nbsp;bug_reviewer/sub2 | complete | 8 / 7 | 39,955 / 504 | 1 |
+| &nbsp;&nbsp;security_reviewer (remote A2A) | complete | 13 / 10 | 50,516 / 718 | 1 |
+| &nbsp;&nbsp;&nbsp;&nbsp;security_reviewer/sub1 | complete | 5 / 4 | 20,631 / 166 | 0 |
+| &nbsp;&nbsp;&nbsp;&nbsp;security_reviewer/sub2 | complete | 5 / 4 | 19,770 / 310 | 1 |
+| &nbsp;&nbsp;test_reviewer | complete | 23 / 19 | 121,849 / 1,196 | 2 |
+| &nbsp;&nbsp;&nbsp;&nbsp;test_reviewer/sub1 | complete | 6 / 5 | 27,415 / 328 | 0 |
+| &nbsp;&nbsp;&nbsp;&nbsp;test_reviewer/sub2 | complete | 10 / 8 | 57,353 / 531 | 1 |
+| verifier (3 checks: 3/2, 2/1, 3/2) | complete | 8 / 5 | 18,269 / 381 | 3 checked |
 
-# 2. full graph on dev_multi_pr (about 75 calls); start the A2A service first
-docker image ls mapr-sandbox-dev_fixture:local     # must exist (docker build -t mapr-sandbox-dev_fixture:local sandbox_images/dev_fixture)
-uv run python scripts/run_a2a_security.py
-Set-Content -NoNewline -Encoding utf8 $env:TEMP\multi_body.txt "Adds a bulk discount and coupons to pricing, stock movements and restock plans, and order, stock and price reports. unit_price() now returns None for an unknown SKU."
-uv run reviewer review --agent graph --judge verifier `
-    --workspace tests/fixtures/dev_multi_pr/workspace --diff tests/fixtures/dev_multi_pr/pr.diff `
-    --title "Add bulk discounts, stock reports and a catalogue page" --body-file $env:TEMP\multi_body.txt `
-    --sandbox-repo dev_fixture --security-mode remote --eval-mode --out $env:TEMP\graph_run.json
-uv run python scripts/run_a2a_security.py --stop
-```
+All three specialists spawned two sub-agents each (batches as expected in `expected.json`).
 
-Then replace the two "pending" lines above with the results (verdicts, dropped findings and reasons,
-per-stage and total calls, tokens, `wait_s_wall`, `wait_s_sum`, net time, trace id), set stage 4B in
-`CLAUDE.md` to done only if the graph run ended `complete`, and record any prompt revision here (only on
-`judge_mix.json`).
+Stage totals: review 59 model / 50 tool, 270,204 in / 3,823 out, 54.3 s net, waits 207.2 s wall-clock
+(733.2 s summed), 261.5 s total; judge (verifier step) 8 / 5, 18,269 in / 381 out, 8.4 s net, waits
+3.5 s wall (3.9 s summed), 11.9 s total; **total 67 model / 55 tool calls, 288,473 in / 4,204 out,
+62.7 s net, waits 210.7 s wall-clock (737.1 s summed), 273.5 s**.
+
+Verdicts: all 3 findings `confirmed`; **dropped by the verifier: 0**. Before the verifier, the
+orchestrator's merge and evidence checks dropped (code, not judgement): evidence mismatches in
+`bug_reviewer/sub1` and `test_reviewer/sub1`, one `not_assigned` (`bug_reviewer/sub2` reported on
+`pricing.py`, not its file), and 5 duplicates (security `sql_injection` at `stock.py:79`, the test
+reviewer's two findings, the bug reviewer's own `stock.py:25`, and the security sub-agent's own
+duplicate).
+
+Expected defects (`tests/fixtures/dev_multi_pr/expected.json`, informational):
+
+| Defect | Found | By |
+| --- | --- | --- |
+| `pricing.py:23` bulk threshold (`wrong_comparison`; reported as `off_by_one`) | yes | `bug_reviewer` (own cross-file pass; also `test_reviewer`) |
+| `stock.py:25` `last_movements` slice | yes | `bug_reviewer/sub2` (also `test_reviewer/sub2`) |
+| `stock.py:79` SQL injection | yes | `bug_reviewer`, also `security_reviewer/sub2` |
+| `reports.py:15-17` cross-file `None` from `unit_price` | **no** | nobody |
+
+The kept payload therefore has 3 of 4 expected defects; the cross-file one was not found.
 
 ## Limitations and interpretations
 
