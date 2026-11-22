@@ -1,0 +1,124 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [
+      {
+        "draft": {
+          "file": "src/marshmallow/schema.py",
+          "line_start": 843,
+          "line_end": 862,
+          "category": "other",
+          "severity": "medium",
+          "confidence": 0.9,
+          "title": "Incorrect field_name to data_key resolution for nested fields",
+          "explanation": "The new logic in `_run_validator` attempts to resolve `field_name` to `data_key` using `self.fields` or `self.declared_fields`. However, `ValidationError` can be raised with a `field_name` that is not a direct field name, but a nested path (e.g., \"nested.field\"). The current implementation only looks up the `field_name` directly in `self.fields`, which will fail to find the field object for nested fields, causing it to fall back to using the full path as the key. This might lead to inconsistent behavior where top-level fields are correctly mapped to their `data_key`, but nested fields are not, or it might incorrectly handle nested paths if the `field_name` is expected to be a simple field name. Furthermore, if `field_name` is a nested path, `self.fields[field_name]` will raise a `KeyError` even if the field exists in the schema, because `self.fields` only contains top-level fields.",
+          "evidence": "843 |             field_name = err.field_name\n844 |             data_key: str\n845 |             if field_name == SCHEMA:\n846 |                 data_key = SCHEMA\n847 |             else:\n848 |                 field_obj: Field | None = None\n849 |                 try:\n850 |                     field_obj = self.fields[field_name]\n851 |                 except KeyError:\n852 |                     if field_name in self.declared_fields:\n853 |                         field_obj = self.declared_fields[field_name]\n854 |                 if field_obj:\n855 |                     data_key = (\n856 |                         field_obj.data_key\n857 |                         if field_obj.data_key is not None\n858 |                         else field_name\n859 |                     )\n860 |                 else:\n861 |                     data_key = field_name\n862 |             error_store.store_error(err.messages, data_key, index=index)"
+        },
+        "reason": "evidence",
+        "detail": "evidence does not match any contiguous run of lines in the file"
+      }
+    ],
+    "summary": "The pull request modifies `_run_validator` in `Schema` to resolve `field_name` to `data_key` when a `ValidationError` is raised. This ensures that if a validator raises an error for a field, the error is stored under the field's `data_key` instead of its internal name. However, the implementation only handles top-level fields and fails to correctly resolve `data_key` for nested fields or fields specified by path.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_018",
+    "model_calls": 10,
+    "tool_calls": 9,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 1,
+      "read_file": 7
+    },
+    "input_tokens": 96113,
+    "output_tokens": 893,
+    "duration_s": 55.672,
+    "wait_s": 40.093,
+    "net_duration_s": 15.579,
+    "waits_by_reason": {
+      "rate_limiter": 40.093
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "85896374-78e9-4a3e-8d97-2bbfdc59be43",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "85896374-78e9-4a3e-8d97-2bbfdc59be43",
+        "model_calls": 10,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 7
+        },
+        "input_tokens": 96113,
+        "output_tokens": 893,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:43:35+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 10,
+      "tool_calls": 9,
+      "input_tokens": 96113,
+      "output_tokens": 893,
+      "duration_s": 55.672,
+      "wait_s": 40.093,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "85896374-78e9-4a3e-8d97-2bbfdc59be43",
+          "model_calls": 10,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 1,
+            "read_file": 7
+          },
+          "input_tokens": 96113,
+          "output_tokens": 893,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

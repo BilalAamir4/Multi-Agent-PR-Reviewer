@@ -1,0 +1,111 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request updates the `transform()` method to preserve `CHECK` constraints when a table is rebuilt. It adds logic to parse existing constraints, filter out those associated with dropped columns, rename columns in the constraints, and include them in the new `CREATE TABLE` statement. The changes also include helper functions to generate the SQL for these constraints.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_010",
+    "model_calls": 9,
+    "tool_calls": 8,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 1,
+      "read_file": 5,
+      "search_code": 1
+    },
+    "input_tokens": 106879,
+    "output_tokens": 288,
+    "duration_s": 51.688,
+    "wait_s": 36.298,
+    "net_duration_s": 15.39,
+    "waits_by_reason": {
+      "rate_limiter": 36.298
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "b547d00c-6aeb-4dfe-8434-b77bbcb616b6",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "b547d00c-6aeb-4dfe-8434-b77bbcb616b6",
+        "model_calls": 9,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 5,
+          "search_code": 1
+        },
+        "input_tokens": 106879,
+        "output_tokens": 288,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:38:38+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 9,
+      "tool_calls": 8,
+      "input_tokens": 106879,
+      "output_tokens": 288,
+      "duration_s": 51.688,
+      "wait_s": 36.298,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "b547d00c-6aeb-4dfe-8434-b77bbcb616b6",
+          "model_calls": 9,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 1,
+            "read_file": 5,
+            "search_code": 1
+          },
+          "input_tokens": 106879,
+          "output_tokens": 288,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

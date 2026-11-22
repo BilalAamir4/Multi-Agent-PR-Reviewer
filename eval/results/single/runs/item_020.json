@@ -1,0 +1,111 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request updates `version_option` in `src/click/decorators.py` to handle cases where the provided `package_name` is an import name rather than an installed distribution name. It uses `importlib.metadata.packages_distributions()` to resolve the import name to the corresponding distribution name, improving compatibility for packages like `PIL` (which maps to `Pillow`). The implementation includes error handling for cases where the name is ambiguous (maps to multiple distributions) or not found.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_020",
+    "model_calls": 6,
+    "tool_calls": 5,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 1,
+      "read_file": 2,
+      "search_code": 1
+    },
+    "input_tokens": 24220,
+    "output_tokens": 231,
+    "duration_s": 43.343,
+    "wait_s": 34.922,
+    "net_duration_s": 8.421,
+    "waits_by_reason": {
+      "rate_limiter": 34.922
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "482ddf92-580a-4b53-b363-ea9e4ac927aa",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "482ddf92-580a-4b53-b363-ea9e4ac927aa",
+        "model_calls": 6,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 2,
+          "search_code": 1
+        },
+        "input_tokens": 24220,
+        "output_tokens": 231,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:44:46+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 6,
+      "tool_calls": 5,
+      "input_tokens": 24220,
+      "output_tokens": 231,
+      "duration_s": 43.343,
+      "wait_s": 34.922,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "482ddf92-580a-4b53-b363-ea9e4ac927aa",
+          "model_calls": 6,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 1,
+            "read_file": 2,
+            "search_code": 1
+          },
+          "input_tokens": 24220,
+          "output_tokens": 231,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

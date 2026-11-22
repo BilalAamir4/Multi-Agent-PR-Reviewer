@@ -1,0 +1,19 @@
+{
+  "item_id": "item_013",
+  "config": "single",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 386,
+      "line_end": 388,
+      "category": "hardcoded_secret",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "Hardcoded encryption key in Database context manager",
+      "explanation": "The `__enter__` method hardcodes an encryption key. This is a security risk as it exposes a secret in the source code. If this is intended for testing, it should be handled via configuration or environment variables, not hardcoded in the library's core class.",
+      "evidence": "    def __enter__(self) -> \"Database\":\n        encryption_key = \"U7Bwb68OM5vhv2UZlL0WqaZK\"\n        self.conn.execute(\"PRAGMA key = {}\".format(self.quote(encryption_key)))\n        return self",
+      "agent": "single",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

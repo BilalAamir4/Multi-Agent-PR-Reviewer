@@ -1,0 +1,108 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request modifies the `transform` method in `sqlite_utils/db.py` to automatically convert empty strings to `NULL` when a `TEXT` column is being transformed into a numeric type (INTEGER, REAL, FLOAT, or NUMERIC). This is achieved by using `NULLIF(col, '')` in the `INSERT...SELECT` statement during the table transformation process. The changes are well-implemented and include appropriate test cases to verify the new behavior.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_011",
+    "model_calls": 7,
+    "tool_calls": 6,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 2,
+      "read_file": 3
+    },
+    "input_tokens": 55078,
+    "output_tokens": 253,
+    "duration_s": 13.203,
+    "wait_s": 1.594,
+    "net_duration_s": 11.609,
+    "waits_by_reason": {
+      "rate_limiter": 1.594
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "ed2a112b-7101-4686-9952-c359bc1a2f5e",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "ed2a112b-7101-4686-9952-c359bc1a2f5e",
+        "model_calls": 7,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 2,
+          "read_file": 3
+        },
+        "input_tokens": 55078,
+        "output_tokens": 253,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:39:30+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 7,
+      "tool_calls": 6,
+      "input_tokens": 55078,
+      "output_tokens": 253,
+      "duration_s": 13.203,
+      "wait_s": 1.594,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "ed2a112b-7101-4686-9952-c359bc1a2f5e",
+          "model_calls": 7,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 2,
+            "read_file": 3
+          },
+          "input_tokens": 55078,
+          "output_tokens": 253,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

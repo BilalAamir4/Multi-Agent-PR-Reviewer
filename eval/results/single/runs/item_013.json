@@ -1,0 +1,122 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [
+      {
+        "file": "sqlite_utils/db.py",
+        "line_start": 386,
+        "line_end": 388,
+        "category": "hardcoded_secret",
+        "severity": "high",
+        "confidence": 1.0,
+        "title": "Hardcoded encryption key in Database context manager",
+        "explanation": "The `__enter__` method hardcodes an encryption key. This is a security risk as it exposes a secret in the source code. If this is intended for testing, it should be handled via configuration or environment variables, not hardcoded in the library's core class.",
+        "evidence": "    def __enter__(self) -> \"Database\":\n        encryption_key = \"U7Bwb68OM5vhv2UZlL0WqaZK\"\n        self.conn.execute(\"PRAGMA key = {}\".format(self.quote(encryption_key)))\n        return self",
+        "agent": "single",
+        "model": "gemini-3.1-flash-lite"
+      }
+    ],
+    "dropped": [],
+    "summary": "The pull request adds context manager support to the `Database` class. However, it introduces a hardcoded encryption key in the `__enter__` method, which is a security vulnerability.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_013",
+    "model_calls": 4,
+    "tool_calls": 3,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 1,
+      "read_file": 1
+    },
+    "input_tokens": 15185,
+    "output_tokens": 309,
+    "duration_s": 7.594,
+    "wait_s": 1.251,
+    "net_duration_s": 6.343,
+    "waits_by_reason": {
+      "rate_limiter": 1.251
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "6ec71d02-5be5-43c8-974f-6bad4090aa3d",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "6ec71d02-5be5-43c8-974f-6bad4090aa3d",
+        "model_calls": 4,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 1
+        },
+        "input_tokens": 15185,
+        "output_tokens": 309,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:40:26+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 4,
+      "tool_calls": 3,
+      "input_tokens": 15185,
+      "output_tokens": 309,
+      "duration_s": 7.594,
+      "wait_s": 1.251,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "6ec71d02-5be5-43c8-974f-6bad4090aa3d",
+          "model_calls": 4,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 1,
+            "read_file": 1
+          },
+          "input_tokens": 15185,
+          "output_tokens": 309,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

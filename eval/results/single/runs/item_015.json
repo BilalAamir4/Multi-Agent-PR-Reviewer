@@ -1,0 +1,111 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request marks several internal utilities as private by renaming them (e.g., `LazyFile` to `_LazyFile`) and adding a `__getattr__` function to `click.utils` to provide a `DeprecationWarning` when the old names are accessed. This is a standard way to deprecate and hide internal APIs in Python. The changes appear correct and consistent with the stated goal.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_015",
+    "model_calls": 10,
+    "tool_calls": 9,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 1,
+      "read_file": 2,
+      "search_code": 5
+    },
+    "input_tokens": 56721,
+    "output_tokens": 285,
+    "duration_s": 23.75,
+    "wait_s": 1.782,
+    "net_duration_s": 21.968,
+    "waits_by_reason": {
+      "rate_limiter": 1.782
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "b954f989-0663-4ef3-8234-dda15e8d8117",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "b954f989-0663-4ef3-8234-dda15e8d8117",
+        "model_calls": 10,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 2,
+          "search_code": 5
+        },
+        "input_tokens": 56721,
+        "output_tokens": 285,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:41:23+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 10,
+      "tool_calls": 9,
+      "input_tokens": 56721,
+      "output_tokens": 285,
+      "duration_s": 23.75,
+      "wait_s": 1.782,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "b954f989-0663-4ef3-8234-dda15e8d8117",
+          "model_calls": 10,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 1,
+            "read_file": 2,
+            "search_code": 5
+          },
+          "input_tokens": 56721,
+          "output_tokens": 285,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

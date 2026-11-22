@@ -1,0 +1,111 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "This pull request introduces deprecation warnings for instantiating base `Field`, `Number`, and `Mapping` classes, encouraging the use of more specific subclasses. It also deprecates returning `False` from validators, advising users to raise a `ValidationError` instead. The changes include updating tests to use `Raw` instead of `Field` to avoid these new warnings.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_016",
+    "model_calls": 16,
+    "tool_calls": 15,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 3,
+      "read_file": 7,
+      "search_code": 4
+    },
+    "input_tokens": 174240,
+    "output_tokens": 523,
+    "duration_s": 94.782,
+    "wait_s": 63.829,
+    "net_duration_s": 30.953,
+    "waits_by_reason": {
+      "rate_limiter": 63.829
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "d7d745e1-6ab8-447b-892c-9e5c50e2aba4",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "d7d745e1-6ab8-447b-892c-9e5c50e2aba4",
+        "model_calls": 16,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 3,
+          "read_file": 7,
+          "search_code": 4
+        },
+        "input_tokens": 174240,
+        "output_tokens": 523,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:41:47+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 16,
+      "tool_calls": 15,
+      "input_tokens": 174240,
+      "output_tokens": 523,
+      "duration_s": 94.782,
+      "wait_s": 63.829,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "d7d745e1-6ab8-447b-892c-9e5c50e2aba4",
+          "model_calls": 16,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 3,
+            "read_file": 7,
+            "search_code": 4
+          },
+          "input_tokens": 174240,
+          "output_tokens": 523,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

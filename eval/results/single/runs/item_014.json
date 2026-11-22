@@ -1,0 +1,142 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "single",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [
+      {
+        "draft": {
+          "file": "sqlite_utils/db.py",
+          "line_start": 940,
+          "line_end": 940,
+          "category": "other",
+          "severity": "medium",
+          "confidence": 0.9,
+          "title": "Missed db[table] to db.table(table) conversion in create_table_sql",
+          "explanation": "The author replaced most `db[table]` calls with `db.table(table)` to satisfy type checkers, but missed this one in `create_table_sql`. This will cause a type error if `db` is expected to be used with `db.table()` for table-specific operations, and it is inconsistent with the rest of the PR.",
+          "evidence": "940 |             if not self[extract_table].exists():\n941 |                 self.create_table(extract_table, {\"id\": int, \"value\": str}, pk=\"id\")"
+        },
+        "reason": "evidence",
+        "detail": "evidence does not match any contiguous run of lines in the file"
+      },
+      {
+        "draft": {
+          "file": "sqlite_utils/db.py",
+          "line_start": 976,
+          "line_end": 976,
+          "category": "other",
+          "severity": "medium",
+          "confidence": 0.9,
+          "title": "Missed db[table] to db.table(table) conversion in create_table_sql",
+          "explanation": "The author replaced most `db[table]` calls with `db.table(table)` to satisfy type checkers, but missed this one in `create_table_sql`. This will cause a type error if `db` is expected to be used with `db.table()` for table-specific operations, and it is inconsistent with the rest of the PR.",
+          "evidence": "975 |             if fk.other_column != \"rowid\" and not any(\n976 |                 c for c in self[fk.other_table].columns if c.name == fk.other_column\n977 |             ):"
+        },
+        "reason": "evidence",
+        "detail": "evidence does not match any contiguous run of lines in the file"
+      }
+    ],
+    "summary": "This PR updates the codebase to satisfy type checkers, primarily by replacing dynamic attribute access with `ctx.meta`, adding type annotations, and replacing `db[table]` with `db.table(table)` to disambiguate between Tables and Views. I found two missed instances of `db[table]` in `sqlite_utils/db.py` that should have been converted to `db.table(table)`.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "aa94f1ae2cf6",
+    "limits": {
+      "max_model_calls": 25,
+      "max_tool_calls": 40,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_014",
+    "model_calls": 7,
+    "tool_calls": 6,
+    "tool_calls_by_tool": {
+      "list_changed_files": 1,
+      "read_diff": 2,
+      "read_file": 2,
+      "search_code": 1
+    },
+    "input_tokens": 68241,
+    "output_tokens": 646,
+    "duration_s": 48.782,
+    "wait_s": 36.282,
+    "net_duration_s": 12.5,
+    "waits_by_reason": {
+      "rate_limiter": 36.282
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "4ad90ccb-1be6-43f5-8f56-2f029832bb79",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "4ad90ccb-1be6-43f5-8f56-2f029832bb79",
+        "model_calls": 7,
+        "tool_calls": {
+          "list_changed_files": 1,
+          "read_diff": 2,
+          "read_file": 2,
+          "search_code": 1
+        },
+        "input_tokens": 68241,
+        "output_tokens": 646,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 0.0,
+    "wait_s_wall": 0.0
+  },
+  "security_mode": null,
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": null,
+  "run_log": [
+    {
+      "started_at": "2026-11-22T08:40:34+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "aa94f1ae2cf6",
+      "model_calls": 7,
+      "tool_calls": 6,
+      "input_tokens": 68241,
+      "output_tokens": 646,
+      "duration_s": 48.782,
+      "wait_s": 36.282,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "4ad90ccb-1be6-43f5-8f56-2f029832bb79",
+          "model_calls": 7,
+          "tool_calls": {
+            "list_changed_files": 1,
+            "read_diff": 2,
+            "read_file": 2,
+            "search_code": 1
+          },
+          "input_tokens": 68241,
+          "output_tokens": 646,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}
