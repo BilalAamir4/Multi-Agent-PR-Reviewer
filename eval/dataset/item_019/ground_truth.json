@@ -1,0 +1,30 @@
+{
+  "item_id": "item_019",
+  "source_repo": "pallets/click",
+  "base_commit": "d791537317947448a3960662d00acf160eff2602",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "src/click/_termui_impl.py",
+      "line_start": 518,
+      "line_end": 520,
+      "kind": "off_by_one",
+      "accepted_kinds": [
+        "off_by_one"
+      ],
+      "description": "Editor.edit_files slices the file names with [:1], so only the first file reaches the editor command and any further files passed to click.edit are silently left out."
+    },
+    {
+      "bug_id": "b2",
+      "file": "tests/test_termui.py",
+      "line_start": 395,
+      "line_end": 396,
+      "kind": "ineffective_test",
+      "accepted_kinds": [
+        "ineffective_test"
+      ],
+      "description": "test_edit only asserts that the edited file is not empty, so it no longer verifies that the editor appended Test to each line."
+    }
+  ]
+}

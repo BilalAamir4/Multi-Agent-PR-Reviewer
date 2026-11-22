@@ -1,0 +1,38 @@
+{
+  "item_id": "item_016",
+  "repo": "marshmallow",
+  "upstream_commit": "8ca596d91194a6c2d0d992a7b66490a0e909d719",
+  "parent": "71ab95a9c33ecac7f86cb9bdc9351461cbf95f6a",
+  "pr_title": "Deprecation warnings for marshmallow 4 changes (#2732)",
+  "pr_body": "* Warn when instantiating base fields\n\n* Deprecate returning False from validators",
+  "bucket": "large",
+  "py_files_changed": 9,
+  "lines_changed": 372,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "dfdf80ba31e2b10df67be179deacfa13b7e8e06f4b8b7754e00a85c873be3455",
+  "tests_original": {
+    "passed": 1223,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.41,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1223 passed in 1.41s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1223,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.41,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1223 passed in 1.41s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

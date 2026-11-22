@@ -1,0 +1,30 @@
+{
+  "item_id": "item_017",
+  "source_repo": "sqlalchemy/alembic",
+  "base_commit": "a914c9dc342497576e0abcbf0f4e9a92465a7cbe",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "alembic/operations/schemaobj.py",
+      "line_start": 236,
+      "line_end": 236,
+      "kind": "wrong_comparison",
+      "accepted_kinds": [
+        "wrong_comparison"
+      ],
+      "description": "SchemaObjects.table keeps a Constraint only when it is type-bound instead of only when it is not, so every explicit constraint passed to create_table is dropped and the type-bound CHECK constraint is emitted twice."
+    },
+    {
+      "bug_id": "b2",
+      "file": "tests/test_op.py",
+      "line_start": 1216,
+      "line_end": 1216,
+      "kind": "ineffective_test",
+      "accepted_kinds": [
+        "ineffective_test"
+      ],
+      "description": "test_create_table_type_bound_check only checks that a CREATE TABLE statement was emitted, so it no longer verifies that the type-bound CHECK constraint appears exactly once in the statement."
+    }
+  ]
+}

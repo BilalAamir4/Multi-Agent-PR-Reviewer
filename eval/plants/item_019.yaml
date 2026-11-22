@@ -1,0 +1,34 @@
+# click: "Adds support for editing multiple files (#2068)"
+# Two plants: all but the first file dropped from the editor command line, and the final read-back assertion of
+# test_edit reduced to a truthiness check.
+item_id: item_019
+repo: click
+commit: 0d69b6ce8b25fe31ea580c608adb8e45df3805bb
+expected_bucket: small
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: off_by_one
+  file: src/click/_termui_impl.py
+  find: |2
+            exc_filename = " ".join(f'"{filename}"' for filename in filenames)
+  replace: |2
+            exc_filename = " ".join(
+                f'"{filename}"' for filename in list(filenames)[:1]
+            )
+  description: >-
+    Editor.edit_files slices the file names with [:1], so only the first file reaches the editor command and
+    any further files passed to click.edit are silently left out.
+- bug_id: b2
+  kind: ineffective_test
+  file: tests/test_termui.py
+  find: |2
+            with open(named_tempfile.name) as reopened_file:
+                assert reopened_file.read() == "aTest\nbTest"
+  replace: |2
+            with open(named_tempfile.name) as reopened_file:
+                content = reopened_file.read()
+            assert content
+  description: >-
+    test_edit only asserts that the edited file is not empty, so it no longer verifies that the editor
+    appended Test to each line.

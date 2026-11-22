@@ -1,0 +1,38 @@
+{
+  "item_id": "item_018",
+  "repo": "marshmallow",
+  "upstream_commit": "9f751e1cef943e2ca1a77f93d3483b4a171d4303",
+  "parent": "a578ed23092bd558acfbd9cd09a164108689326d",
+  "pr_title": "Fix handling data_key in ValidationErrors raised in schema validators (#2792)",
+  "pr_body": "",
+  "bucket": "medium",
+  "py_files_changed": 4,
+  "lines_changed": 86,
+  "sweep": false,
+  "plant_patch": "",
+  "tests_key": "fd72b87a95907a8868d6715601ee65a247217a80803e9883dc2fb30e93d3325c",
+  "tests_original": {
+    "passed": 1224,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.4,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1224 passed in 1.40s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 1224,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.42,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1224 passed in 1.42s",
+    "failing": []
+  },
+  "bug_tests": {},
+  "static_hits": {}
+}

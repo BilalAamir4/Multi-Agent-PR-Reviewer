@@ -1,0 +1,29 @@
+# click: "Mark clearly functions private status. Deprecated Python 2 utilities."
+# Two plants: a short help limit that is one too small where the caller passes it to the renamed helper in
+# utils.py (cross-file), and the safecall wrapper dropped from the file close callback in types.py.
+item_id: item_015
+repo: click
+commit: 7a0a3447f6ddd2c15438c5d098e289323f9f9556
+expected_bucket: large
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: off_by_one
+  file: src/click/core.py
+  find: |2
+                text = _make_default_short_help(self.help, limit)
+  replace: |2
+                text = _make_default_short_help(self.help, limit - 1)
+  description: >-
+    Command.get_short_help_str passes limit - 1 as max_length to _make_default_short_help in utils.py, so
+    the short help derived from the help text is truncated one character earlier than the requested limit.
+- bug_id: b2
+  kind: unhandled_exception
+  file: src/click/types.py
+  find: |2
+                        ctx.call_on_close(_safecall(f.close))
+  replace: |2
+                        ctx.call_on_close(f.close)
+  description: >-
+    File.convert registers f.close directly instead of wrapping it in _safecall, so an error raised while
+    closing the file propagates out of the context teardown instead of being swallowed.

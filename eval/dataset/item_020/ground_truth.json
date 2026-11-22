@@ -1,0 +1,19 @@
+{
+  "item_id": "item_020",
+  "source_repo": "pallets/click",
+  "base_commit": "916883afad450c0c9bbc4212817900949131adbd",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "src/click/decorators.py",
+      "line_start": 511,
+      "line_end": 513,
+      "kind": "unhandled_exception",
+      "accepted_kinds": [
+        "unhandled_exception"
+      ],
+      "description": "The --version callback indexes the packages_distributions mapping directly, so a package name that is not installed raises KeyError instead of reaching the RuntimeError that says the package is not installed."
+    }
+  ]
+}

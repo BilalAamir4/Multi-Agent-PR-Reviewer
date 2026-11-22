@@ -1,0 +1,80 @@
+{
+  "item_id": "item_015",
+  "repo": "click",
+  "upstream_commit": "7a0a3447f6ddd2c15438c5d098e289323f9f9556",
+  "parent": "b551fe85714c906565303fae98136d7c72b252ea",
+  "pr_title": "Mark clearly functions private status. Deprecated Python 2 utilities.",
+  "pr_body": "",
+  "bucket": "large",
+  "py_files_changed": 10,
+  "lines_changed": 177,
+  "sweep": false,
+  "plant_patch": "diff --git a/src/click/core.py b/src/click/core.py\nindex 6f48367..893096b 100644\n--- a/src/click/core.py\n+++ b/src/click/core.py\n@@ -1239,7 +1239,7 @@ class Command:\n         if self.short_help:\n             text = inspect.cleandoc(self.short_help)\n         elif self.help:\n-            text = _make_default_short_help(self.help, limit)\n+            text = _make_default_short_help(self.help, limit - 1)\n         else:\n             text = \"\"\n \ndiff --git a/src/click/types.py b/src/click/types.py\nindex c7eb9fd..c2a0485 100644\n--- a/src/click/types.py\n+++ b/src/click/types.py\n@@ -956,7 +956,7 @@ class File(ParamType[t.IO[t.Any]]):\n             # type is used with prompts.\n             if ctx is not None:\n                 if should_close:\n-                    ctx.call_on_close(_safecall(f.close))\n+                    ctx.call_on_close(f.close)\n                 else:\n                     ctx.call_on_close(_safecall(f.flush))\n \n",
+  "tests_key": "8075fbcfe9aadbc48afad11c0ac70058f77344fe3bef9bffcd36093b5a100955",
+  "tests_original": {
+    "passed": 1902,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 24,
+    "duration": 3.27,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1902 passed, 24 skipped, 31000 deselected, 1 xfailed in 3.27s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 238,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.79,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 238 passed, 31000 deselected, 1 xfailed in 1.79s",
+    "failing": [
+      "FAILED tests/test_commands.py::test_auto_shorthelp"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 238,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 1.78,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 238 passed, 31000 deselected, 1 xfailed in 1.78s",
+        "failing": [
+          "FAILED tests/test_commands.py::test_auto_shorthelp"
+        ]
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 1902,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 24,
+        "duration": 3.19,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1902 passed, 24 skipped, 31000 deselected, 1 xfailed in 3.19s",
+        "failing": []
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

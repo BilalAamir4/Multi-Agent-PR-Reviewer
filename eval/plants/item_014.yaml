@@ -1,0 +1,44 @@
+# sqlite-utils: "Type fixes now enforced by ty"
+# Three plants: table names formatted into the counts query, a passphrase written as a class attribute of
+# Database, and the empty result guard of raw output dropped. The passphrase is a generated random string
+# (decision 0014).
+item_id: item_014
+repo: sqlite-utils
+commit: 871038505bfad965177fd12eb45e62e7f4d25d65
+expected_bucket: large
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: sql_injection
+  file: sqlite_utils/db.py
+  find: |2
+                sql += ' where "table" in ({})'.format(", ".join("?" for _ in tables_list))
+  replace: |2
+                sql += ' where "table" in ({})'.format(
+                    ", ".join("'{}'".format(table) for table in tables_list)
+                )
+                tables_list = None
+  description: >-
+    Database.cached_counts builds the where clause by formatting the table names into the SQL text instead
+    of binding them as parameters, so a table name containing a quote changes the query.
+- bug_id: b2
+  kind: hardcoded_secret
+  file: sqlite_utils/db.py
+  find: |2
+        conn: sqlite3.Connection
+  replace: |2
+        conn: sqlite3.Connection
+        connection_passphrase = "kvGBUvT3Ie64L5nVKP5PbOaM"
+  description: >-
+    Database defines the passphrase for its connection as a string literal in the class body, so the
+    credential is stored in the source and shipped with every install.
+- bug_id: b3
+  kind: missing_none_check
+  file: sqlite_utils/cli.py
+  find: |2
+                data = row[0] if row else None
+  replace: |2
+                data = row[0]
+  description: >-
+    _execute_query indexes the first row of the cursor without checking that fetchone() returned a row, so
+    a raw query that returns no rows raises TypeError instead of printing nothing.

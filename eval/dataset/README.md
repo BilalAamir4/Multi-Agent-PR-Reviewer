@@ -19,11 +19,18 @@ from the parent to the commit plus the bugs. A clean item is the upstream commit
 | item_011 | sqlite-utils | [`e4935e064407`](https://github.com/simonw/sqlite-utils/commit/e4935e064407bc995f77795c025c33cef52d742e) | small | 2 | 62 | planted | `sql_injection` |
 | item_012 | click | [`c53d3732b98c`](https://github.com/pallets/click/commit/c53d3732b98c764932e146c007146ad402acb229) | small | 2 | 64 | clean | none |
 | item_013 | sqlite-utils | [`fd5b09f64b43`](https://github.com/simonw/sqlite-utils/commit/fd5b09f64b4353b0c85084eb04415e344d05832f) | large | 11 | 301 | planted | `hardcoded_secret` (2) |
+| item_014 | sqlite-utils | [`871038505bfa`](https://github.com/simonw/sqlite-utils/commit/871038505bfad965177fd12eb45e62e7f4d25d65) | large | 11 | 161 | planted | `sql_injection`, `hardcoded_secret`, `missing_none_check` |
+| item_015 | click | [`7a0a3447f6dd`](https://github.com/pallets/click/commit/7a0a3447f6ddd2c15438c5d098e289323f9f9556) | large | 10 | 177 | planted | `off_by_one`, `unhandled_exception` |
+| item_016 | marshmallow | [`8ca596d91194`](https://github.com/marshmallow-code/marshmallow/commit/8ca596d91194a6c2d0d992a7b66490a0e909d719) | large | 9 | 372 | clean | none |
+| item_017 | alembic | [`b0ffa3db5a16`](https://github.com/sqlalchemy/alembic/commit/b0ffa3db5a1654f365072de2ffcdb226dc28397b) | medium | 4 | 274 | planted | `wrong_comparison`, `ineffective_test` |
+| item_018 | marshmallow | [`9f751e1cef94`](https://github.com/marshmallow-code/marshmallow/commit/9f751e1cef943e2ca1a77f93d3483b4a171d4303) | medium | 4 | 86 | clean | none |
+| item_019 | click | [`0d69b6ce8b25`](https://github.com/pallets/click/commit/0d69b6ce8b25fe31ea580c608adb8e45df3805bb) | small | 3 | 71 | planted | `off_by_one`, `ineffective_test` |
+| item_020 | click | [`bec59289d8cf`](https://github.com/pallets/click/commit/bec59289d8cf9b9b4010642b2fee483e5f8eeefc) | small | 2 | 121 | planted | `unhandled_exception` |
 
 item_003 has exactly 4 changed `.py` files because stage 4's timing test uses it.
 
-item_006 to item_013 are session E1 of the dataset expansion (decision 0014); item_014 to item_020
-(session E2) complete the 20 items of D5. `uv run python -m eval.dataset_stats` prints the
+item_006 to item_013 are session E1 and item_014 to item_020 session E2 of the dataset expansion
+(decision 0014); together they complete the 20 items of D5 (14 planted, 6 clean). `uv run python -m eval.dataset_stats` prints the
 bucket, kind, repository, multi-line, cross-file and D12 spawning counts and compares them with the
 targets; `eval/dataset_notes.yaml` lists the cross-file bugs.
 

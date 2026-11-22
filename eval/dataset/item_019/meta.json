@@ -1,0 +1,88 @@
+{
+  "item_id": "item_019",
+  "repo": "click",
+  "upstream_commit": "0d69b6ce8b25fe31ea580c608adb8e45df3805bb",
+  "parent": "d791537317947448a3960662d00acf160eff2602",
+  "pr_title": "Adds support for editing multiple files (#2068)",
+  "pr_body": "Co-authored-by: Andreas Backx <andreas@backx.org>",
+  "bucket": "small",
+  "py_files_changed": 3,
+  "lines_changed": 71,
+  "sweep": false,
+  "plant_patch": "diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py\nindex 0ec9e2c..47feeb4 100644\n--- a/src/click/_termui_impl.py\n+++ b/src/click/_termui_impl.py\n@@ -515,7 +515,9 @@ class Editor:\n             environ = os.environ.copy()\n             environ.update(self.env)\n \n-        exc_filename = \" \".join(f'\"{filename}\"' for filename in filenames)\n+        exc_filename = \" \".join(\n+            f'\"{filename}\"' for filename in list(filenames)[:1]\n+        )\n \n         try:\n             c = subprocess.Popen(\ndiff --git a/tests/test_termui.py b/tests/test_termui.py\nindex ad9d0a6..5722397 100644\n--- a/tests/test_termui.py\n+++ b/tests/test_termui.py\n@@ -392,7 +392,8 @@ def test_edit(runner):\n \n         # We need ot reopen the file as it becomes unreadable after the edit.\n         with open(named_tempfile.name) as reopened_file:\n-            assert reopened_file.read() == \"aTest\\nbTest\"\n+            content = reopened_file.read()\n+        assert content\n \n \n @pytest.mark.parametrize(\n",
+  "tests_key": "0c095ff4b76b881c909c6050b7d6422642332159180fa6035e8faf88cdd34f03",
+  "tests_original": {
+    "passed": 617,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 21,
+    "duration": 0.94,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "617 passed, 21 skipped, 1 xfailed in 0.94s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 617,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 21,
+    "duration": 0.93,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "617 passed, 21 skipped, 1 xfailed in 0.93s",
+    "failing": []
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 617,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 21,
+        "duration": 0.92,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "617 passed, 21 skipped, 1 xfailed in 0.92s",
+        "failing": []
+      }
+    },
+    "b2": {
+      "alone": {
+        "passed": 617,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 21,
+        "duration": 0.93,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "617 passed, 21 skipped, 1 xfailed in 0.93s",
+        "failing": []
+      },
+      "own_test": "tests/test_termui.py::test_edit",
+      "own_test_planted": {
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 0.04,
+        "exit_code": 0,
+        "timed_out": false,
+        "summary": "1 passed in 0.04s",
+        "failing": []
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    },
+    "b2": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

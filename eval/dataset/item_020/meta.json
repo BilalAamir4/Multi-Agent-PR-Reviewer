@@ -1,0 +1,62 @@
+{
+  "item_id": "item_020",
+  "repo": "click",
+  "upstream_commit": "bec59289d8cf9b9b4010642b2fee483e5f8eeefc",
+  "parent": "916883afad450c0c9bbc4212817900949131adbd",
+  "pr_title": "Fix `package_name` resolution when top-level module differs from distribution name",
+  "pr_body": "Refs: #1884 #2331 #3125",
+  "bucket": "small",
+  "py_files_changed": 2,
+  "lines_changed": 121,
+  "sweep": false,
+  "plant_patch": "diff --git a/src/click/decorators.py b/src/click/decorators.py\nindex db6a45e..9eb0312 100644\n--- a/src/click/decorators.py\n+++ b/src/click/decorators.py\n@@ -508,9 +508,9 @@ def version_option(\n                 # The given name didn't match an installed distribution.\n                 # Try resolving it as an import (top-level module) name,\n                 # e.g. ``PIL`` is provided by the ``Pillow`` distribution.\n-                distributions = importlib.metadata.packages_distributions().get(\n-                    package_name, []\n-                )\n+                distributions = importlib.metadata.packages_distributions()[\n+                    package_name\n+                ]\n                 if len(distributions) == 1:\n                     package_name = distributions[0]\n                     version = importlib.metadata.version(package_name)\n",
+  "tests_key": "fd245fb8bf55a9026969c140986812e460aff3fe7e6717d24cd86e107b8e8fc0",
+  "tests_original": {
+    "passed": 1661,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 24,
+    "duration": 3.1,
+    "exit_code": 0,
+    "timed_out": false,
+    "summary": "1661 passed, 24 skipped, 31000 deselected, 1 xfailed in 3.10s",
+    "failing": []
+  },
+  "tests_planted": {
+    "passed": 191,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "duration": 1.79,
+    "exit_code": 1,
+    "timed_out": false,
+    "summary": "1 failed, 191 passed, 31000 deselected in 1.79s",
+    "failing": [
+      "FAILED tests/test_basic.py::test_version_option_unknown_package_errors"
+    ]
+  },
+  "bug_tests": {
+    "b1": {
+      "alone": {
+        "passed": 191,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "duration": 1.77,
+        "exit_code": 1,
+        "timed_out": false,
+        "summary": "1 failed, 191 passed, 31000 deselected in 1.77s",
+        "failing": [
+          "FAILED tests/test_basic.py::test_version_option_unknown_package_errors"
+        ]
+      }
+    }
+  },
+  "static_hits": {
+    "b1": {
+      "flagged": false,
+      "ruff": [],
+      "bandit": []
+    }
+  }
+}

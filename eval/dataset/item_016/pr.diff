@@ -1,0 +1,1002 @@
+diff --git a/CHANGELOG.rst b/CHANGELOG.rst
+index 25b4c4f3..41fcf918 100644
+--- a/CHANGELOG.rst
++++ b/CHANGELOG.rst
+@@ -15,8 +15,14 @@ Bug fixes:
+ 
+ Deprecations:
+ 
++- Custom validators should raise a `ValidationError <marshmallow.exceptions.ValidationError>` for invalid values. 
++  Returning `False`` is no longer supported .
+ - Deprecate ``context`` parameter of `Schema <marshmallow.schema.Schema>` (:issue:`1826`).
+   Use `contextVars.ContextVar` to pass context data instead.
++- `Field <marshmallow.fields.Field>`, `Mapping <marshmallow.fields.Mapping>`,
++  and `Number <marshmallow.fields.Number>` should no longer be used as fields within schemas.
++  Use their subclasses instead.
++
+ 
+ 3.23.3 (2025-01-03)
+ *******************
+diff --git a/pyproject.toml b/pyproject.toml
+index 57227731..6e854755 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -90,3 +90,6 @@ no_implicit_optional = true
+ [tool.pytest.ini_options]
+ norecursedirs = ".git .ropeproject .tox docs env venv tests/mypy_test_cases"
+ addopts = "-v --tb=short"
++filterwarnings = [
++  "ignore:Returning `False` from a validator:marshmallow.warnings.ChangedInMarshmallow4Warning",
++]
+diff --git a/src/marshmallow/fields.py b/src/marshmallow/fields.py
+index 7fd7d587..0f992657 100644
+--- a/src/marshmallow/fields.py
++++ b/src/marshmallow/fields.py
+@@ -29,7 +29,10 @@ from marshmallow.utils import (
+     missing as missing_,
+ )
+ from marshmallow.validate import And, Length
+-from marshmallow.warnings import RemovedInMarshmallow4Warning
++from marshmallow.warnings import (
++    ChangedInMarshmallow4Warning,
++    RemovedInMarshmallow4Warning,
++)
+ 
+ if typing.TYPE_CHECKING:
+     from marshmallow.schema import Schema, SchemaMeta
+@@ -136,6 +139,16 @@ class Field(FieldABC):
+         "validator_failed": "Invalid value.",
+     }
+ 
++    def __new__(cls, *args, **kwargs):
++        if cls is Field:
++            warnings.warn(
++                "`Field` should not be instantiated. Use `fields.Raw` or  "
++                "another field subclass instead.",
++                ChangedInMarshmallow4Warning,
++                stacklevel=2,
++            )
++        return super().__new__(cls)
++
+     def __init__(
+         self,
+         *,
+@@ -949,6 +962,15 @@ class Number(Field, typing.Generic[_NumType]):
+         "too_large": "Number too large.",
+     }
+ 
++    def __new__(cls, *args, **kwargs):
++        if cls is Number:
++            warnings.warn(
++                "`Number` field should not be instantiated. Use `Integer`, `Float`, or `Decimal` instead.",
++                ChangedInMarshmallow4Warning,
++                stacklevel=2,
++            )
++        return super().__new__(cls)
++
+     def __init__(self, *, as_string: bool = False, **kwargs):
+         self.as_string = as_string
+         super().__init__(**kwargs)
+@@ -1556,6 +1578,15 @@ class Mapping(Field):
+     #: Default error messages.
+     default_error_messages = {"invalid": "Not a valid mapping type."}
+ 
++    def __new__(cls, *args, **kwargs):
++        if cls is Mapping:
++            warnings.warn(
++                "`Mapping` field should not be instantiated. Use `Dict` instead.",
++                ChangedInMarshmallow4Warning,
++                stacklevel=2,
++            )
++        return super().__new__(cls)
++
+     def __init__(
+         self,
+         keys: Field | type[Field] | None = None,
+@@ -1868,7 +1899,7 @@ class Enum(Field):
+         or Field class or instance to use to (de)serialize by value. Defaults to False.
+ 
+     If `by_value` is `False` (default), enum members are (de)serialized by symbol (name).
+-    If it is `True`, they are (de)serialized by value using :class:`Field`.
++    If it is `True`, they are (de)serialized by value using :class:`Raw`.
+     If it is a field instance or class, they are (de)serialized by value using this field.
+ 
+     .. versionadded:: 3.18.0
+@@ -1898,7 +1929,7 @@ class Enum(Field):
+         # Serialization by value
+         else:
+             if by_value is True:
+-                self.field = Field()
++                self.field = Raw()
+             else:
+                 try:
+                     self.field = resolve_field_instance(by_value)
+diff --git a/src/marshmallow/validate.py b/src/marshmallow/validate.py
+index 6f450cab..f8f00406 100644
+--- a/src/marshmallow/validate.py
++++ b/src/marshmallow/validate.py
+@@ -4,12 +4,14 @@ from __future__ import annotations
+ 
+ import re
+ import typing
++import warnings
+ from abc import ABC, abstractmethod
+ from itertools import zip_longest
+ from operator import attrgetter
+ 
+ from marshmallow import types
+ from marshmallow.exceptions import ValidationError
++from marshmallow.warnings import ChangedInMarshmallow4Warning
+ 
+ _T = typing.TypeVar("_T")
+ 
+@@ -77,6 +79,12 @@ class And(Validator):
+             try:
+                 r = validator(value)
+                 if not isinstance(validator, Validator) and r is False:
++                    warnings.warn(
++                        "Returning `False` from a validator is deprecated. "
++                        "Raise a `ValidationError` instead.",
++                        ChangedInMarshmallow4Warning,
++                        stacklevel=2,
++                    )
+                     raise ValidationError(self.error)
+             except ValidationError as err:
+                 kwargs.update(err.kwargs)
+diff --git a/src/marshmallow/warnings.py b/src/marshmallow/warnings.py
+index 0da3c50d..ea561cf6 100644
+--- a/src/marshmallow/warnings.py
++++ b/src/marshmallow/warnings.py
+@@ -1,2 +1,10 @@
+-class RemovedInMarshmallow4Warning(DeprecationWarning):
++class Marshmallow4Warning(DeprecationWarning):
++    pass
++
++
++class ChangedInMarshmallow4Warning(Marshmallow4Warning):
++    pass
++
++
++class RemovedInMarshmallow4Warning(Marshmallow4Warning):
+     pass
+diff --git a/tests/base.py b/tests/base.py
+index 63cc5de5..b14c7f6b 100644
+--- a/tests/base.py
++++ b/tests/base.py
+@@ -38,7 +38,6 @@ ALL_FIELDS = [
+     fields.Integer,
+     fields.Boolean,
+     fields.Float,
+-    fields.Number,
+     fields.DateTime,
+     fields.Time,
+     fields.Date,
+diff --git a/tests/test_decorators.py b/tests/test_decorators.py
+index a59fb08a..fe4c33dc 100644
+--- a/tests/test_decorators.py
++++ b/tests/test_decorators.py
+@@ -127,7 +127,7 @@ def test_decorated_processor_returning_none(unknown):
+ class TestPassOriginal:
+     def test_pass_original_single(self):
+         class MySchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+             @post_load(pass_original=True)
+             def post_load(self, data, original_data, **kwargs):
+@@ -154,7 +154,7 @@ class TestPassOriginal:
+ 
+     def test_pass_original_many(self):
+         class MySchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+             @post_load(pass_many=True, pass_original=True)
+             def post_load(self, data, original, many, **kwargs):
+diff --git a/tests/test_deserialization.py b/tests/test_deserialization.py
+index 8816efeb..d93a832e 100644
+--- a/tests/test_deserialization.py
++++ b/tests/test_deserialization.py
+@@ -10,7 +10,10 @@ import pytest
+ from marshmallow import EXCLUDE, INCLUDE, RAISE, Schema, fields, validate
+ from marshmallow.exceptions import ValidationError
+ from marshmallow.validate import Equal
+-from marshmallow.warnings import RemovedInMarshmallow4Warning
++from marshmallow.warnings import (
++    ChangedInMarshmallow4Warning,
++    RemovedInMarshmallow4Warning,
++)
+ from tests.base import (
+     ALL_FIELDS,
+     DateEnum,
+@@ -50,7 +53,7 @@ class TestDeserializingNone:
+             field.deserialize(None)
+ 
+     def test_allow_none_is_true_if_missing_is_true(self):
+-        field = fields.Field(load_default=None)
++        field = fields.Raw(load_default=None)
+         assert field.allow_none is True
+         assert field.deserialize(None) is None
+ 
+@@ -402,7 +405,8 @@ class TestFieldDeserialization:
+             boolfield.deserialize("notabool")
+         assert str(excinfo.value.args[0]) == "Not valid: notabool"
+ 
+-        numfield = fields.Number(error_messages=error_messages)
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            numfield = fields.Number(error_messages=error_messages)
+         with pytest.raises(ValidationError) as excinfo:
+             numfield.deserialize("notanum")
+         assert str(excinfo.value.args[0]) == "Not valid: notanum"
+@@ -1410,7 +1414,7 @@ class TestFieldDeserialization:
+                     return True
+                 return False
+ 
+-        field = fields.Field(validate=MyValidator())
++        field = fields.Raw(validate=MyValidator())
+         assert field.deserialize("valid") == "valid"
+         with pytest.raises(ValidationError, match="Invalid value."):
+             field.deserialize("invalid")
+@@ -1422,7 +1426,7 @@ class TestFieldDeserialization:
+             raise ValidationError(["err1", "err2"])
+ 
+         class MySchema(Schema):
+-            foo = fields.Field(validate=validator)
++            foo = fields.Raw(validate=validator)
+ 
+         errors = MySchema().validate({"foo": 42})
+         assert errors["foo"] == ["err1", "err2"]
+@@ -1654,7 +1658,7 @@ class TestSchemaDeserialization:
+     # regression test for https://github.com/marshmallow-code/marshmallow/issues/450
+     def test_deserialize_with_attribute_param_symmetry(self):
+         class MySchema(Schema):
+-            foo = fields.Field(attribute="bar.baz")
++            foo = fields.Raw(attribute="bar.baz")
+ 
+         schema = MySchema()
+         dump_data = schema.dump({"bar": {"baz": 42}})
+@@ -1705,7 +1709,7 @@ class TestSchemaDeserialization:
+ 
+     def test_deserialize_with_data_key_as_empty_string(self):
+         class MySchema(Schema):
+-            name = fields.Field(data_key="")
++            name = fields.Raw(data_key="")
+ 
+         schema = MySchema()
+         assert schema.load({"": "Grace"}) == {"name": "Grace"}
+@@ -1797,7 +1801,7 @@ class TestSchemaDeserialization:
+             raise ValidationError("Something went wrong")
+ 
+         class MySchema(Schema):
+-            foo = fields.Field(validate=validate_field)
++            foo = fields.Raw(validate=validate_field)
+ 
+         with pytest.raises(ValidationError) as excinfo:
+             MySchema().load({"foo": 42})
+@@ -1812,7 +1816,7 @@ class TestSchemaDeserialization:
+             raise ValidationError("foo is not valid")
+ 
+         class MySchema(Schema):
+-            foo = fields.Field(
++            foo = fields.Raw(
+                 required=True, validate=[validate_with_bool, validate_with_error]
+             )
+ 
+@@ -1851,7 +1855,7 @@ class TestSchemaDeserialization:
+ 
+     def test_required_value_only_passed_to_validators_if_provided(self):
+         class MySchema(Schema):
+-            foo = fields.Field(required=True, validate=lambda f: False)
++            foo = fields.Raw(required=True, validate=lambda f: False)
+ 
+         with pytest.raises(ValidationError) as excinfo:
+             MySchema().load({})
+@@ -1863,8 +1867,8 @@ class TestSchemaDeserialization:
+     @pytest.mark.parametrize("partial_schema", [True, False])
+     def test_partial_deserialization(self, partial_schema):
+         class MySchema(Schema):
+-            foo = fields.Field(required=True)
+-            bar = fields.Field(required=True)
++            foo = fields.Raw(required=True)
++            bar = fields.Raw(required=True)
+ 
+         schema_args = {}
+         load_args = {}
+@@ -1879,9 +1883,9 @@ class TestSchemaDeserialization:
+ 
+     def test_partial_fields_deserialization(self):
+         class MySchema(Schema):
+-            foo = fields.Field(required=True)
+-            bar = fields.Field(required=True)
+-            baz = fields.Field(required=True)
++            foo = fields.Raw(required=True)
++            bar = fields.Raw(required=True)
++            baz = fields.Raw(required=True)
+ 
+         with pytest.raises(ValidationError) as excinfo:
+             MySchema().load({"foo": 3}, partial=tuple())
+@@ -1902,9 +1906,9 @@ class TestSchemaDeserialization:
+ 
+     def test_partial_fields_validation(self):
+         class MySchema(Schema):
+-            foo = fields.Field(required=True)
+-            bar = fields.Field(required=True)
+-            baz = fields.Field(required=True)
++            foo = fields.Raw(required=True)
++            bar = fields.Raw(required=True)
++            baz = fields.Raw(required=True)
+ 
+         errors = MySchema().validate({"foo": 3}, partial=tuple())
+         assert "bar" in errors
+@@ -2291,8 +2295,8 @@ def test_required_message_can_be_changed(message):
+ @pytest.mark.parametrize("data", [True, False, 42, None, []])
+ def test_deserialize_raises_exception_if_input_type_is_incorrect(data, unknown):
+     class MySchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
+ 
+     with pytest.raises(ValidationError, match="Invalid input type.") as excinfo:
+         MySchema(unknown=unknown).load(data)
+diff --git a/tests/test_fields.py b/tests/test_fields.py
+index cb1d4638..4c26dfaa 100644
+--- a/tests/test_fields.py
++++ b/tests/test_fields.py
+@@ -30,9 +30,9 @@ def test_field_aliases(alias, field):
+ class TestField:
+     def test_repr(self):
+         default = "œ∑´"
+-        field = fields.Field(dump_default=default, attribute=None)
++        field = fields.Raw(dump_default=default, attribute=None)
+         assert repr(field) == (
+-            f"<fields.Field(dump_default={default!r}, attribute=None, "
++            f"<fields.Raw(dump_default={default!r}, attribute=None, "
+             "validate=None, required=False, "
+             "load_only=False, dump_only=False, "
+             f"load_default={missing}, allow_none=False, "
+@@ -43,13 +43,13 @@ class TestField:
+ 
+     def test_error_raised_if_uncallable_validator_passed(self):
+         with pytest.raises(ValueError, match="must be a callable"):
+-            fields.Field(validate="notcallable")
++            fields.Raw(validate="notcallable")
+ 
+     def test_error_raised_if_missing_is_set_on_required_field(self):
+         with pytest.raises(
+             ValueError, match="'load_default' must not be set for required fields"
+         ):
+-            fields.Field(required=True, load_default=42)
++            fields.Raw(required=True, load_default=42)
+ 
+     def test_custom_field_receives_attr_and_obj(self):
+         class MyField(fields.Field):
+@@ -93,10 +93,10 @@ class TestField:
+ 
+ class TestParentAndName:
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+         bar = fields.List(fields.Str())
+         baz = fields.Tuple([fields.Str(), fields.Int()])
+-        bax = fields.Mapping(fields.Str(), fields.Int())
++        bax = fields.Dict(fields.Str(), fields.Int())
+ 
+     @pytest.fixture()
+     def schema(self):
+@@ -188,7 +188,7 @@ class TestParentAndName:
+     # Regression test for https://github.com/marshmallow-code/marshmallow/issues/1808
+     def test_field_named_parent_has_root(self, schema):
+         class MySchema(Schema):
+-            parent = fields.Field()
++            parent = fields.Raw()
+ 
+         schema = MySchema()
+         assert schema.fields["parent"].root == schema
+diff --git a/tests/test_schema.py b/tests/test_schema.py
+index 06edc405..153bb560 100644
+--- a/tests/test_schema.py
++++ b/tests/test_schema.py
+@@ -23,7 +23,10 @@ from marshmallow.exceptions import (
+     StringNotCollectionError,
+     ValidationError,
+ )
+-from marshmallow.warnings import RemovedInMarshmallow4Warning
++from marshmallow.warnings import (
++    ChangedInMarshmallow4Warning,
++    RemovedInMarshmallow4Warning,
++)
+ from tests.base import (
+     Blog,
+     BlogOnlySchema,
+@@ -82,7 +85,7 @@ def test_load_resets_errors():
+ def test_load_validation_error_stores_input_data_and_valid_data():
+     class MySchema(Schema):
+         always_valid = fields.DateTime()
+-        always_invalid = fields.Field(validate=[lambda v: False])
++        always_invalid = fields.Raw(validate=[lambda v: False])
+ 
+     schema = MySchema()
+     input_data = {
+@@ -418,7 +421,7 @@ class TestValidate:
+ 
+     def test_validate_required(self):
+         class MySchema(Schema):
+-            foo = fields.Field(required=True)
++            foo = fields.Raw(required=True)
+ 
+         s = MySchema()
+         errors = s.validate({"bar": 42})
+@@ -817,8 +820,8 @@ def test_nested_custom_set_in_exclude_reusing_schema():
+             return [][item]
+ 
+     class ChildSchema(Schema):
+-        foo = fields.Field(required=True)
+-        bar = fields.Field()
++        foo = fields.Raw(required=True)
++        bar = fields.Raw()
+ 
+         class Meta:
+             only = ("bar",)
+@@ -835,13 +838,13 @@ def test_nested_custom_set_in_exclude_reusing_schema():
+ 
+ def test_nested_only():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema)
+ 
+     sch = ParentSchema(only=("bla", "blubb.foo", "blubb.bar"))
+@@ -858,13 +861,13 @@ def test_nested_only():
+ 
+ def test_nested_only_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema, only=("foo", "bar"))
+ 
+     sch = ParentSchema(only=("blubb.foo", "blubb.baz"))
+@@ -881,13 +884,13 @@ def test_nested_only_inheritance():
+ 
+ def test_nested_only_empty_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema, only=("bar",))
+ 
+     sch = ParentSchema(only=("blubb.foo",))
+@@ -904,13 +907,13 @@ def test_nested_only_empty_inheritance():
+ 
+ def test_nested_exclude():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema)
+ 
+     sch = ParentSchema(exclude=("bli", "blubb.baz"))
+@@ -927,13 +930,13 @@ def test_nested_exclude():
+ 
+ def test_nested_exclude_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema, exclude=("baz",))
+ 
+     sch = ParentSchema(exclude=("blubb.foo",))
+@@ -950,13 +953,13 @@ def test_nested_exclude_inheritance():
+ 
+ def test_nested_only_and_exclude():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema)
+ 
+     sch = ParentSchema(only=("bla", "blubb.foo", "blubb.bar"), exclude=("blubb.foo",))
+@@ -973,13 +976,13 @@ def test_nested_only_and_exclude():
+ 
+ def test_nested_only_then_exclude_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema, only=("foo", "bar"))
+ 
+     sch = ParentSchema(exclude=("blubb.foo",))
+@@ -996,13 +999,13 @@ def test_nested_only_then_exclude_inheritance():
+ 
+ def test_nested_exclude_then_only_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema, exclude=("foo",))
+ 
+     sch = ParentSchema(only=("blubb.bar",))
+@@ -1019,15 +1022,15 @@ def test_nested_exclude_then_only_inheritance():
+ 
+ def test_nested_exclude_and_only_inheritance():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
+-        ban = fields.Field()
+-        fuu = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
++        ban = fields.Raw()
++        fuu = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(
+             ChildSchema, only=("foo", "bar", "baz", "ban"), exclude=("foo",)
+         )
+@@ -1105,13 +1108,13 @@ def test_nested_instance_exclude():
+ 
+ def test_meta_nested_exclude():
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema)
+ 
+         class Meta:
+@@ -1198,18 +1201,18 @@ def test_nested_custom_set_not_implementing_getitem():
+ 
+ def test_deeply_nested_only_and_exclude():
+     class GrandChildSchema(Schema):
+-        goo = fields.Field()
+-        gah = fields.Field()
+-        bah = fields.Field()
++        goo = fields.Raw()
++        gah = fields.Raw()
++        bah = fields.Raw()
+ 
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
+         flubb = fields.Nested(GrandChildSchema)
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(ChildSchema)
+ 
+     sch = ParentSchema(
+@@ -1283,10 +1286,10 @@ def test_nested_lambda():
+ @pytest.mark.parametrize("data_key", ("f1", "f5", None))
+ def test_data_key_collision(data_key):
+     class MySchema(Schema):
+-        f1 = fields.Field()
+-        f2 = fields.Field(data_key=data_key)
+-        f3 = fields.Field(data_key="f5")
+-        f4 = fields.Field(data_key="f1", load_only=True)
++        f1 = fields.Raw()
++        f2 = fields.Raw(data_key=data_key)
++        f3 = fields.Raw(data_key="f5")
++        f4 = fields.Raw(data_key="f1", load_only=True)
+ 
+     if data_key is None:
+         MySchema()
+@@ -1298,10 +1301,10 @@ def test_data_key_collision(data_key):
+ @pytest.mark.parametrize("attribute", ("f1", "f5", None))
+ def test_attribute_collision(attribute):
+     class MySchema(Schema):
+-        f1 = fields.Field()
+-        f2 = fields.Field(attribute=attribute)
+-        f3 = fields.Field(attribute="f5")
+-        f4 = fields.Field(attribute="f1", dump_only=True)
++        f1 = fields.Raw()
++        f2 = fields.Raw(attribute=attribute)
++        f3 = fields.Raw(attribute="f5")
++        f4 = fields.Raw(attribute="f1", dump_only=True)
+ 
+     if attribute is None:
+         MySchema()
+@@ -1447,18 +1450,18 @@ class TestDeeplyNestedListLoadOnly:
+ 
+ def test_nested_constructor_only_and_exclude():
+     class GrandChildSchema(Schema):
+-        goo = fields.Field()
+-        gah = fields.Field()
+-        bah = fields.Field()
++        goo = fields.Raw()
++        gah = fields.Raw()
++        bah = fields.Raw()
+ 
+     class ChildSchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
+         flubb = fields.Nested(GrandChildSchema)
+ 
+     class ParentSchema(Schema):
+-        bla = fields.Field()
+-        bli = fields.Field()
++        bla = fields.Raw()
++        bli = fields.Raw()
+         blubb = fields.Nested(
+             ChildSchema, only=("foo", "flubb.goo", "flubb.gah"), exclude=("flubb.goo",)
+         )
+@@ -1481,9 +1484,9 @@ def test_nested_constructor_only_and_exclude():
+ 
+ def test_only_and_exclude():
+     class MySchema(Schema):
+-        foo = fields.Field()
+-        bar = fields.Field()
+-        baz = fields.Field()
++        foo = fields.Raw()
++        bar = fields.Raw()
++        baz = fields.Raw()
+ 
+     sch = MySchema(only=("foo", "bar"), exclude=("bar",))
+     data = dict(foo=42, bar=24, baz=242)
+@@ -1494,7 +1497,7 @@ def test_only_and_exclude():
+ 
+ def test_only_and_exclude_with_fields():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+         class Meta:
+             fields = ("bar", "baz")
+@@ -1508,7 +1511,7 @@ def test_only_and_exclude_with_fields():
+ 
+ def test_invalid_only_and_exclude_with_fields():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+         class Meta:
+             fields = ("bar", "baz")
+@@ -1523,7 +1526,7 @@ def test_invalid_only_and_exclude_with_fields():
+ 
+ def test_only_and_exclude_with_additional():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+         class Meta:
+             additional = ("bar", "baz")
+@@ -1537,7 +1540,7 @@ def test_only_and_exclude_with_additional():
+ 
+ def test_invalid_only_and_exclude_with_additional():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+         class Meta:
+             additional = ("bar", "baz")
+@@ -1552,7 +1555,7 @@ def test_invalid_only_and_exclude_with_additional():
+ 
+ def test_exclude_invalid_attribute():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+     with pytest.raises(ValueError, match="'bar'"):
+         MySchema(exclude=("bar",))
+@@ -1578,7 +1581,7 @@ def test_only_bounded_by_additional():
+ 
+ def test_only_empty():
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+     sch = MySchema(only=())
+     assert "foo" not in sch.dump({"foo": "bar"})
+@@ -1587,7 +1590,7 @@ def test_only_empty():
+ @pytest.mark.parametrize("param", ("only", "exclude"))
+ def test_only_and_exclude_as_string(param):
+     class MySchema(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+     with pytest.raises(StringNotCollectionError):
+         MySchema(**{param: "foo"})
+@@ -1595,7 +1598,7 @@ def test_only_and_exclude_as_string(param):
+ 
+ def test_nested_with_sets():
+     class Inner(Schema):
+-        foo = fields.Field()
++        foo = fields.Raw()
+ 
+     class Outer(Schema):
+         inners = fields.Nested(Inner, many=True)
+@@ -1895,7 +1898,7 @@ class TestFieldValidation:
+             raise ValidationError(["err1", "err2"])
+ 
+         class MySchema(Schema):
+-            foo = fields.Field(validate=validator)
++            foo = fields.Raw(validate=validator)
+ 
+         s = MySchema()
+         errors = s.validate({"foo": 42})
+@@ -1907,7 +1910,7 @@ class TestFieldValidation:
+             raise ValidationError({"code": "invalid_foo"})
+ 
+         class MySchema(Schema):
+-            foo = fields.Field(validate=validator)
++            foo = fields.Raw(validate=validator)
+ 
+         s = MySchema()
+         errors = s.validate({"foo": 42})
+@@ -1915,8 +1918,8 @@ class TestFieldValidation:
+ 
+     def test_ignored_if_not_in_only(self):
+         class MySchema(Schema):
+-            a = fields.Field()
+-            b = fields.Field()
++            a = fields.Raw()
++            b = fields.Raw()
+ 
+             @validates("a")
+             def validate_a(self, val):
+@@ -1971,7 +1974,7 @@ class TestNestedSchema:
+ 
+     def test_nested_with_attribute_none(self):
+         class InnerSchema(Schema):
+-            bar = fields.Field()
++            bar = fields.Raw()
+ 
+         class MySchema(Schema):
+             foo = fields.Nested(InnerSchema)
+@@ -2101,7 +2104,7 @@ class TestNestedSchema:
+     # regression test for https://github.com/marshmallow-code/marshmallow/issues/188
+     def test_invalid_type_passed_to_nested_field(self):
+         class InnerSchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+         class MySchema(Schema):
+             inner = fields.Nested(InnerSchema, many=True)
+@@ -2128,7 +2131,7 @@ class TestNestedSchema:
+     # regression test for https://github.com/marshmallow-code/marshmallow/issues/298
+     def test_all_errors_on_many_nested_field_with_validates_decorator(self):
+         class Inner(Schema):
+-            req = fields.Field(required=True)
++            req = fields.Raw(required=True)
+ 
+         class Outer(Schema):
+             inner = fields.Nested(Inner, many=True)
+@@ -2394,7 +2397,7 @@ class TestSelfReference:
+ 
+ 
+ class RequiredUserSchema(Schema):
+-    name = fields.Field(required=True)
++    name = fields.Raw(required=True)
+ 
+ 
+ def test_serialization_with_required_field():
+@@ -2527,7 +2530,7 @@ class TestContext:
+     # Regression test for https://github.com/marshmallow-code/marshmallow/issues/820
+     def test_nested_list_fields_inherit_context(self):
+         class InnerSchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+             @validates("foo")
+             def validate_foo(self, value):
+@@ -2548,7 +2551,7 @@ class TestContext:
+     # Regression test for https://github.com/marshmallow-code/marshmallow/issues/820
+     def test_nested_dict_fields_inherit_context(self):
+         class InnerSchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+             @validates("foo")
+             def validate_foo(self, value):
+@@ -2573,7 +2576,7 @@ class TestContext:
+                 raise NotImplementedError
+ 
+         class InnerSchema(Schema):
+-            foo = fields.Field()
++            foo = fields.Raw()
+ 
+         with pytest.warns(RemovedInMarshmallow4Warning):
+ 
+@@ -2596,10 +2599,11 @@ def test_serializer_can_specify_nested_object_as_attribute(blog):
+ 
+ class TestFieldInheritance:
+     def test_inherit_fields_from_schema_subclass(self):
+-        expected = {
+-            "field_a": fields.Number(),
+-            "field_b": fields.Number(),
+-        }
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            expected = {
++                "field_a": fields.Number(),
++                "field_b": fields.Number(),
++            }
+ 
+         class SerializerA(Schema):
+             field_a = expected["field_a"]
+@@ -2610,10 +2614,11 @@ class TestFieldInheritance:
+         assert SerializerB._declared_fields == expected
+ 
+     def test_inherit_fields_from_non_schema_subclass(self):
+-        expected = {
+-            "field_a": fields.Number(),
+-            "field_b": fields.Number(),
+-        }
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            expected = {
++                "field_a": fields.Number(),
++                "field_b": fields.Number(),
++            }
+ 
+         class PlainBaseClass:
+             field_a = expected["field_a"]
+@@ -2743,7 +2748,7 @@ class TestRequiredFields:
+ 
+     def test_allow_none_custom_message(self, data):
+         class MySchema(Schema):
+-            allow_none_field = fields.Field(
++            allow_none_field = fields.Raw(
+                 allow_none=False, error_messages={"null": "<custom>"}
+             )
+ 
+diff --git a/tests/test_serialization.py b/tests/test_serialization.py
+index d519c676..b4c0f5fd 100644
+--- a/tests/test_serialization.py
++++ b/tests/test_serialization.py
+@@ -12,7 +12,10 @@ import pytest
+ 
+ from marshmallow import Schema, fields
+ from marshmallow import missing as missing_
+-from marshmallow.warnings import RemovedInMarshmallow4Warning
++from marshmallow.warnings import (
++    ChangedInMarshmallow4Warning,
++    RemovedInMarshmallow4Warning,
++)
+ from tests.base import ALL_FIELDS, DateEnum, GenderEnum, HairColorEnum, User, central
+ 
+ 
+@@ -40,18 +43,21 @@ class TestFieldSerialization:
+         ("value", "expected"), [(42, float(42)), (0, float(0)), (None, None)]
+     )
+     def test_number(self, value, expected, user):
+-        field = fields.Number()
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            field = fields.Number()
+         user.age = value
+         assert field.serialize("age", user) == expected
+ 
+     def test_number_as_string(self, user):
+         user.age = 42
+-        field = fields.Number(as_string=True)
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            field = fields.Number(as_string=True)
+         assert field.serialize("age", user) == str(float(user.age))
+ 
+     def test_number_as_string_passed_none(self, user):
+         user.age = None
+-        field = fields.Number(as_string=True, allow_none=True)
++        with pytest.warns(ChangedInMarshmallow4Warning):
++            field = fields.Number(as_string=True, allow_none=True)
+         assert field.serialize("age", user) is None
+ 
+     def test_function_field_passed_func(self, user):
+@@ -537,7 +543,7 @@ class TestFieldSerialization:
+ 
+     def test_serialize_with_data_key_as_empty_string(self):
+         class MySchema(Schema):
+-            name = fields.Field(data_key="")
++            name = fields.Raw(data_key="")
+ 
+         schema = MySchema()
+         assert schema.dump({"name": "Grace"}) == {"": "Grace"}
+@@ -939,7 +945,7 @@ class TestFieldSerialization:
+             fields.Tuple([ASchema])
+ 
+     def test_serialize_does_not_apply_validators(self, user):
+-        field = fields.Field(validate=lambda x: False)
++        field = fields.Raw(validate=lambda x: False)
+         # No validation error raised
+         assert field.serialize("age", user) == user.age
+ 
+@@ -994,7 +1000,7 @@ class TestSchemaSerialization:
+ def test_serializing_named_tuple():
+     Point = namedtuple("Point", ["x", "y"])
+ 
+-    field = fields.Field()
++    field = fields.Raw()
+ 
+     p = Point(x=4, y=2)
+ 

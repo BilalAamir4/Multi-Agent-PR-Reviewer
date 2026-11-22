@@ -1,0 +1,36 @@
+# alembic: "Don't double type-bound CHECK constraints in create_table"
+# Two plants: the type-bound test inverted in SchemaObjects.table, and the final statement assertion of
+# test_create_table_type_bound_check reduced to a fragment check.
+item_id: item_017
+repo: alembic
+commit: b0ffa3db5a1654f365072de2ffcdb226dc28397b
+expected_bucket: medium
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: wrong_comparison
+  file: alembic/operations/schemaobj.py
+  find: |2
+                    and not sqla_compat._is_type_bound(elem)
+  replace: |2
+                    and sqla_compat._is_type_bound(elem)
+  description: >-
+    SchemaObjects.table keeps a Constraint only when it is type-bound instead of only when it is not, so
+    every explicit constraint passed to create_table is dropped and the type-bound CHECK constraint is
+    emitted twice.
+- bug_id: b2
+  kind: ineffective_test
+  file: tests/test_op.py
+  find: |2
+            context.assert_(
+                "CREATE TABLE some_table ("
+                "id INTEGER NOT NULL, "
+                f"x {ddl_type}, "
+                "PRIMARY KEY (id), "
+                f"CONSTRAINT {ck_name} CHECK ({ck_expr}))"
+            )
+  replace: |2
+            context.assert_contains("CREATE TABLE some_table")
+  description: >-
+    test_create_table_type_bound_check only checks that a CREATE TABLE statement was emitted, so it no
+    longer verifies that the type-bound CHECK constraint appears exactly once in the statement.

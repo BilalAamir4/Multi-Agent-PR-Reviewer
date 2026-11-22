@@ -1,0 +1,8 @@
+# marshmallow: "Deprecation warnings for marshmallow 4 changes (#2732)"
+# Clean item: the upstream commit unchanged.
+item_id: item_016
+repo: marshmallow
+commit: 8ca596d91194a6c2d0d992a7b66490a0e909d719
+expected_bucket: large
+is_clean: true
+bugs: []

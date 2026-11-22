@@ -1,0 +1,8 @@
+# marshmallow: "Fix handling data_key in ValidationErrors raised in schema validators (#2792)"
+# Clean item: the upstream commit unchanged.
+item_id: item_018
+repo: marshmallow
+commit: 9f751e1cef943e2ca1a77f93d3483b4a171d4303
+expected_bucket: medium
+is_clean: true
+bugs: []

@@ -1,0 +1,42 @@
+{
+  "item_id": "item_014",
+  "source_repo": "simonw/sqlite-utils",
+  "base_commit": "fd5b09f64b4353b0c85084eb04415e344d05832f",
+  "is_clean": false,
+  "bugs": [
+    {
+      "bug_id": "b1",
+      "file": "sqlite_utils/db.py",
+      "line_start": 812,
+      "line_end": 815,
+      "kind": "sql_injection",
+      "accepted_kinds": [
+        "sql_injection"
+      ],
+      "description": "Database.cached_counts builds the where clause by formatting the table names into the SQL text instead of binding them as parameters, so a table name containing a quote changes the query."
+    },
+    {
+      "bug_id": "b2",
+      "file": "sqlite_utils/db.py",
+      "line_start": 332,
+      "line_end": 332,
+      "kind": "hardcoded_secret",
+      "accepted_kinds": [
+        "hardcoded_secret"
+      ],
+      "description": "Database defines the passphrase for its connection as a string literal in the class body, so the credential is stored in the source and shipped with every install."
+    },
+    {
+      "bug_id": "b3",
+      "file": "sqlite_utils/cli.py",
+      "line_start": 2127,
+      "line_end": 2127,
+      "kind": "missing_none_check",
+      "accepted_kinds": [
+        "missing_none_check",
+        "unhandled_exception"
+      ],
+      "description": "_execute_query indexes the first row of the cursor without checking that fetchone() returned a row, so a raw query that returns no rows raises TypeError instead of printing nothing."
+    }
+  ]
+}

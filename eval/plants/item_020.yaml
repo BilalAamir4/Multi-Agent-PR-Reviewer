@@ -1,0 +1,23 @@
+# click: "Fix `package_name` resolution when top-level module differs from distribution name"
+# One plant: the lookup of the import name in packages_distributions indexes the mapping directly.
+item_id: item_020
+repo: click
+commit: bec59289d8cf9b9b4010642b2fee483e5f8eeefc
+expected_bucket: small
+is_clean: false
+bugs:
+- bug_id: b1
+  kind: unhandled_exception
+  file: src/click/decorators.py
+  find: |2
+                    distributions = importlib.metadata.packages_distributions().get(
+                        package_name, []
+                    )
+  replace: |2
+                    distributions = importlib.metadata.packages_distributions()[
+                        package_name
+                    ]
+  description: >-
+    The --version callback indexes the packages_distributions mapping directly, so a package name that is
+    not installed raises KeyError instead of reaching the RuntimeError that says the package is not
+    installed.

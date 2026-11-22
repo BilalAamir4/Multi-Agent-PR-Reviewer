@@ -1,0 +1,155 @@
+diff --git a/CHANGES.rst b/CHANGES.rst
+index 2db769f..123feef 100644
+--- a/CHANGES.rst
++++ b/CHANGES.rst
+@@ -62,6 +62,10 @@ Unreleased
+ -   Contexts created during shell completion are closed properly, fixing
+     ``ResourceWarning``s when using ``click.File``. :issue:`2644` :pr:`2800`
+     :pr:`2767`
++-   ``click.edit(filename)`` now supports passing an iterable of filenames in
++    case the editor supports editing multiple files at once. Its return type
++    is now also typed: ``AnyStr`` if ``text`` is passed, otherwise ``None``.
++    :issue:`2067` :pr:`2068`
+ 
+ 
+ Version 8.1.8
+diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py
+index 7b97bfb..47feeb4 100644
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -505,7 +505,7 @@ class Editor:
+                 return editor
+         return "vi"
+ 
+-    def edit_file(self, filename: str) -> None:
++    def edit_files(self, filenames: cabc.Iterable[str]) -> None:
+         import subprocess
+ 
+         editor = self.get_editor()
+@@ -515,8 +515,14 @@ class Editor:
+             environ = os.environ.copy()
+             environ.update(self.env)
+ 
++        exc_filename = " ".join(
++            f'"{filename}"' for filename in list(filenames)[:1]
++        )
++
+         try:
+-            c = subprocess.Popen(f'{editor} "{filename}"', env=environ, shell=True)
++            c = subprocess.Popen(
++                args=f"{editor} {exc_filename}", env=environ, shell=True
++            )
+             exit_code = c.wait()
+             if exit_code != 0:
+                 raise ClickException(
+@@ -559,7 +565,7 @@ class Editor:
+             # recorded, so get the new recorded value.
+             timestamp = os.path.getmtime(name)
+ 
+-            self.edit_file(name)
++            self.edit_files((name,))
+ 
+             if self.require_save and os.path.getmtime(name) == timestamp:
+                 return None
+diff --git a/src/click/termui.py b/src/click/termui.py
+index e14e670..96a7443 100644
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -643,13 +643,34 @@ def secho(
+     return echo(message, file=file, nl=nl, err=err, color=color)
+ 
+ 
++@t.overload
++def edit(
++    text: t.AnyStr,
++    editor: str | None = None,
++    env: cabc.Mapping[str, str] | None = None,
++    require_save: bool = True,
++    extension: str = ".txt",
++) -> t.AnyStr: ...
++
++
++@t.overload
++def edit(
++    text: None = None,
++    editor: str | None = None,
++    env: cabc.Mapping[str, str] | None = None,
++    require_save: bool = True,
++    extension: str = ".txt",
++    filename: str | cabc.Iterable[str] | None = None,
++) -> None: ...
++
++
+ def edit(
+     text: t.AnyStr | None = None,
+     editor: str | None = None,
+     env: cabc.Mapping[str, str] | None = None,
+     require_save: bool = True,
+     extension: str = ".txt",
+-    filename: str | None = None,
++    filename: str | cabc.Iterable[str] | None = None,
+ ) -> t.AnyStr | None:
+     r"""Edits the given text in the defined editor.  If an editor is given
+     (should be the full path to the executable but the regular operating
+@@ -676,7 +697,16 @@ def edit(
+                       highlighting.
+     :param filename: if provided it will edit this file instead of the
+                      provided text contents.  It will not use a temporary
+-                     file as an indirection in that case.
++                     file as an indirection in that case. If the editor supports
++                     editing multiple files at once, a sequence of files may be
++                     passed as well. Invoke `click.file` once per file instead
++                     if multiple files cannot be managed at once or editing the
++                     files serially is desired.
++
++    .. versionchanged:: 8.2.0
++        ``filename`` now accepts any ``Iterable[str]`` in addition to a ``str``
++        if the ``editor`` supports editing multiple files at once.
++
+     """
+     from ._termui_impl import Editor
+ 
+@@ -685,7 +715,10 @@ def edit(
+     if filename is None:
+         return ed.edit(text)
+ 
+-    ed.edit_file(filename)
++    if isinstance(filename, str):
++        filename = (filename,)
++
++    ed.edit_files(filenames=filename)
+     return None
+ 
+ 
+diff --git a/tests/test_termui.py b/tests/test_termui.py
+index 8fdfe8d..5722397 100644
+--- a/tests/test_termui.py
++++ b/tests/test_termui.py
+@@ -1,4 +1,5 @@
+ import platform
++import tempfile
+ import time
+ 
+ import pytest
+@@ -380,6 +381,21 @@ def test_fast_edit(runner):
+     assert result == "aTest\nbTest\n"
+ 
+ 
++@pytest.mark.skipif(platform.system() == "Windows", reason="No sed on Windows.")
++def test_edit(runner):
++    with tempfile.NamedTemporaryFile(mode="w") as named_tempfile:
++        named_tempfile.write("a\nb")
++        named_tempfile.flush()
++
++        result = click.edit(filename=named_tempfile.name, editor="sed -i~ 's/$/Test/'")
++        assert result is None
++
++        # We need ot reopen the file as it becomes unreadable after the edit.
++        with open(named_tempfile.name) as reopened_file:
++            content = reopened_file.read()
++        assert content
++
++
+ @pytest.mark.parametrize(
+     ("prompt_required", "required", "args", "expect"),
+     [
