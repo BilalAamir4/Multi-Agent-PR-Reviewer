@@ -645,8 +645,9 @@ def test_cli_unknown_sandbox_repo_is_an_error(tmp_path, monkeypatch, capsys):
 
 def test_stage_1_result_json_still_loads():
     path = Path(__file__).resolve().parents[1] / "eval" / "results" / "single" / "runs"
-    files = sorted(path.glob("item_*.json"))
-    assert files, "no stage 1 run files"
+    # Only the five stage 1 baseline items: later runs (stage 5) carry the newer fields.
+    files = [path / f"item_00{n}.json" for n in range(1, 6)]
+    assert all(f.is_file() for f in files), "no stage 1 run files"
     for p in files:
         data = json.loads(p.read_bytes())["result"]
         assert "agent" not in data and "notes" not in data

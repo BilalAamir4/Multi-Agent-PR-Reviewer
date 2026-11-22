@@ -1,0 +1,19 @@
+{
+  "item_id": "item_009",
+  "config": "orchestrator",
+  "findings": [
+    {
+      "file": "src/marshmallow/fields.py",
+      "line_start": 743,
+      "line_end": 746,
+      "category": "other",
+      "severity": "medium",
+      "confidence": 0.9,
+      "title": "List field bypasses public serialize method of inner field",
+      "explanation": "The `List` field's `_serialize` method now uses `self.inner._serialize` directly. However, `Field._serialize` is a protected method that is intended to be overridden by subclasses, and `Field.serialize` (the public method) is what should be called to handle `None` values and other field-level logic (like `dump_default`). By calling `_serialize` directly, `List` bypasses any logic that might be implemented in `Field.serialize` or other subclasses of `Field` that might be used as the `inner` field. This is a regression in behavior for fields that rely on the public `serialize` method.",
+      "evidence": "    def _serialize(self, value, attr, obj, **kwargs) -> list[_InternalType] | None:\n        if value is None:\n            return None\n        return [self.inner._serialize(each, attr, obj, **kwargs) for each in value]",
+      "agent": "bug_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

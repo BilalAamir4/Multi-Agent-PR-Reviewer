@@ -1,0 +1,342 @@
+{
+  "result": {
+    "status": "partial",
+    "agent": "orchestrator",
+    "notes": [
+      "bug_reviewer ended limit_reached; its findings are kept"
+    ],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [
+      {
+        "file": "alembic/autogenerate/compare/check_constraints.py",
+        "line_start": 67,
+        "line_end": 72,
+        "category": "ineffective_test",
+        "severity": "medium",
+        "confidence": 1.0,
+        "title": "Graceful handling of missing reflection support is broken",
+        "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because `_InspectorConv.get_check_constraints` raises `NotImplementedError` when reflection is not supported, but the code only catches `KeyError`. The tests are ineffective because they do not actually test the graceful handling of missing reflection support as intended, but rather crash.",
+        "evidence": "    try:\n        conn_ck_list = _InspectorConv(inspector).get_check_constraints(\n            tname, schema=schema\n        )\n    except KeyError:\n        return PriorityDispatchResult.CONTINUE",
+        "agent": "test_reviewer",
+        "model": "gemini-3.1-flash-lite"
+      }
+    ],
+    "dropped": [],
+    "summary": "This pull request adds autogenerate support for detecting named CHECK constraints. The implementation was reviewed for logic and test coverage. The test reviewer identified a potential issue with how missing reflection support is handled in the new `alembic/autogenerate/compare/check_constraints.py` module.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "4eda79561a8c",
+    "limits": {
+      "max_model_calls": 8,
+      "max_tool_calls": 12,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_007",
+    "model_calls": 30,
+    "tool_calls": 29,
+    "tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 3,
+      "read_diff": 5,
+      "read_file": 13,
+      "run_tests": 1,
+      "search_code": 5
+    },
+    "input_tokens": 329672,
+    "output_tokens": 1484,
+    "duration_s": 134.875,
+    "wait_s": 145.798,
+    "net_duration_s": 27.53,
+    "waits_by_reason": {
+      "rate_limiter": 145.798
+    },
+    "retries_by_reason": {},
+    "langsmith_run_id": "798d5771-98fc-4ff9-b543-4f8427d30e80",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "798d5771-98fc-4ff9-b543-4f8427d30e80",
+        "model_calls": 5,
+        "tool_calls": {
+          "call_bug_reviewer": 1,
+          "call_test_reviewer": 1,
+          "list_changed_files": 1,
+          "read_diff": 2
+        },
+        "input_tokens": 23704,
+        "output_tokens": 401,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [
+      {
+        "status": "limit_reached",
+        "agent": "bug_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": "max_model_calls",
+        "reset_at": null,
+        "findings": [],
+        "dropped": [],
+        "summary": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "0a0cf383d913",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": null
+        },
+        "evaluation": true,
+        "item_id": "item_007",
+        "model_calls": 20,
+        "tool_calls": 20,
+        "tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 2,
+          "read_file": 12,
+          "search_code": 5
+        },
+        "input_tokens": 265243,
+        "output_tokens": 686,
+        "duration_s": 117.625,
+        "wait_s": 90.924,
+        "net_duration_s": 26.701,
+        "waits_by_reason": {
+          "rate_limiter": 90.924
+        },
+        "retries_by_reason": {},
+        "langsmith_run_id": "d989d894-92bd-4e7f-9fdb-edaa8ccf6b5e",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "d989d894-92bd-4e7f-9fdb-edaa8ccf6b5e",
+            "model_calls": 20,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 2,
+              "read_file": 12,
+              "search_code": 5
+            },
+            "input_tokens": 265243,
+            "output_tokens": 686,
+            "outcome": "limit_reached"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [],
+        "spawn": null,
+        "own_model_calls": 0,
+        "own_tool_calls": 0,
+        "own_tool_calls_by_tool": {},
+        "own_input_tokens": 0,
+        "own_output_tokens": 0,
+        "wait_s_sum": 0.0,
+        "wait_s_wall": 0.0
+      },
+      {
+        "status": "complete",
+        "agent": "test_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [
+          {
+            "file": "alembic/autogenerate/compare/check_constraints.py",
+            "line_start": 67,
+            "line_end": 72,
+            "category": "ineffective_test",
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Graceful handling of missing reflection support is broken",
+            "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because `_InspectorConv.get_check_constraints` raises `NotImplementedError` when reflection is not supported, but the code only catches `KeyError`. The tests are ineffective because they do not actually test the graceful handling of missing reflection support as intended, but rather crash.",
+            "evidence": "    try:\n        conn_ck_list = _InspectorConv(inspector).get_check_constraints(\n            tname, schema=schema\n        )\n    except KeyError:\n        return PriorityDispatchResult.CONTINUE",
+            "agent": "test_reviewer",
+            "model": "gemini-3.1-flash-lite"
+          }
+        ],
+        "dropped": [],
+        "summary": "The pull request adds autogenerate support for CHECK constraint detection. While the core logic seems sound, the tests for graceful handling of missing reflection support are failing due to an unhandled `NotImplementedError` in the implementation. Additionally, some rendering tests are failing due to minor mismatches in expected output.",
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "c7c71887b22e",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": 3
+        },
+        "evaluation": true,
+        "item_id": "item_007",
+        "model_calls": 5,
+        "tool_calls": 4,
+        "tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 1,
+          "run_tests": 1
+        },
+        "input_tokens": 40725,
+        "output_tokens": 397,
+        "duration_s": 53.765,
+        "wait_s": 44.327,
+        "net_duration_s": 9.438,
+        "waits_by_reason": {
+          "rate_limiter": 44.327
+        },
+        "retries_by_reason": {},
+        "langsmith_run_id": "73ffd949-24dd-47c0-a2d5-abe5cf887fbe",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "73ffd949-24dd-47c0-a2d5-abe5cf887fbe",
+            "model_calls": 5,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 1,
+              "run_tests": 1
+            },
+            "input_tokens": 40725,
+            "output_tokens": 397,
+            "outcome": "complete"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [],
+        "spawn": null,
+        "own_model_calls": 0,
+        "own_tool_calls": 0,
+        "own_tool_calls_by_tool": {},
+        "own_input_tokens": 0,
+        "own_output_tokens": 0,
+        "wait_s_sum": 0.0,
+        "wait_s_wall": 0.0
+      }
+    ],
+    "spawn": null,
+    "own_model_calls": 5,
+    "own_tool_calls": 5,
+    "own_tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 1,
+      "read_diff": 2
+    },
+    "own_input_tokens": 23704,
+    "own_output_tokens": 401,
+    "wait_s_sum": 145.798,
+    "wait_s_wall": 107.345,
+    "plan": [
+      {
+        "specialist": "bug_reviewer",
+        "called": true,
+        "reason": "The change introduces new logic for autogenerate check constraint detection, which requires a review of the implementation."
+      },
+      {
+        "specialist": "security_reviewer",
+        "called": false,
+        "reason": "The change does not involve security-sensitive operations like SQL injection, authentication, or untrusted input parsing."
+      },
+      {
+        "specialist": "test_reviewer",
+        "called": true,
+        "reason": "The change includes a significant new test file and modifies existing tests, requiring a review of the test coverage and effectiveness."
+      }
+    ]
+  },
+  "security_mode": "local",
+  "scoring": {
+    "decision": "scored",
+    "cause": "partial: bug_reviewer limit_reached"
+  },
+  "spawn_enabled": false,
+  "run_log": [
+    {
+      "plan": [
+        {
+          "specialist": "bug_reviewer",
+          "called": true,
+          "reason": "The change introduces new logic for autogenerate check constraint detection, which requires a review of the implementation."
+        },
+        {
+          "specialist": "security_reviewer",
+          "called": false,
+          "reason": "The change does not involve security-sensitive operations like SQL injection, authentication, or untrusted input parsing."
+        },
+        {
+          "specialist": "test_reviewer",
+          "called": true,
+          "reason": "The change includes a significant new test file and modifies existing tests, requiring a review of the test coverage and effectiveness."
+        }
+      ],
+      "children": {
+        "bug_reviewer": "limit_reached",
+        "test_reviewer": "complete"
+      },
+      "wait_s_sum": 145.798,
+      "wait_s_wall": 107.345,
+      "own_model_calls": 5,
+      "own_input_tokens": 23704,
+      "own_output_tokens": 401,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": false,
+      "spawn_max_concurrency": 3,
+      "spawned": {
+        "bug_reviewer": {
+          "spawned": false,
+          "subagents": 0,
+          "model_calls": 20
+        },
+        "test_reviewer": {
+          "spawned": false,
+          "subagents": 0,
+          "model_calls": 5
+        }
+      },
+      "started_at": "2026-11-22T08:57:10+00:00",
+      "reason": "first run",
+      "status": "partial",
+      "scoring": {
+        "decision": "scored",
+        "cause": "partial: bug_reviewer limit_reached"
+      },
+      "retries_by_reason": {},
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 30,
+      "tool_calls": 29,
+      "input_tokens": 329672,
+      "output_tokens": 1484,
+      "duration_s": 134.875,
+      "wait_s": 145.798,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "798d5771-98fc-4ff9-b543-4f8427d30e80",
+          "model_calls": 5,
+          "tool_calls": {
+            "call_bug_reviewer": 1,
+            "call_test_reviewer": 1,
+            "list_changed_files": 1,
+            "read_diff": 2
+          },
+          "input_tokens": 23704,
+          "output_tokens": 401,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}

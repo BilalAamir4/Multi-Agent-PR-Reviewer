@@ -1,0 +1,19 @@
+{
+  "item_id": "item_011",
+  "config": "orchestrator",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 3122,
+      "line_end": 3122,
+      "category": "sql_injection",
+      "severity": "high",
+      "confidence": 0.8,
+      "title": "Unquoted column name in SQL string construction",
+      "explanation": "The `_copy_expr` function uses `NULLIF({}, '').format(col)` where `col` is a column name. While `col` comes from the table's existing columns, it is not quoted. If a column name contains characters that can break out of the `NULLIF` function (e.g., `col = \"x), y FROM table; --\"`), this could lead to SQL injection. The column name should be passed through `quote_identifier` before being formatted into the string.",
+      "evidence": "        def _copy_expr(col):\n            if col in text_to_numeric_cols:\n                return \"NULLIF({}, '')\".format(col)\n            return quote_identifier(col)",
+      "agent": "security_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

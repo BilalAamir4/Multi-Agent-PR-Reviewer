@@ -1,0 +1,19 @@
+{
+  "item_id": "item_003",
+  "config": "orchestrator",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 3096,
+      "line_end": 3096,
+      "category": "other",
+      "severity": "medium",
+      "confidence": 0.9,
+      "title": "Unquoted index name in DROP INDEX statement",
+      "explanation": "The `drop_index` method uses `format` to insert the `index_name` directly into the `DROP INDEX` SQL statement without quoting it. If the index name contains special characters or spaces, this will result in invalid SQL or potential SQL injection if the index name is sourced from untrusted input. It should use `quote_identifier(index_name)` to safely quote the index name.",
+      "evidence": "self.db.execute(\"DROP INDEX {}\".format(index_name))",
+      "agent": "bug_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

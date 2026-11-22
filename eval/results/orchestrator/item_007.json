@@ -1,0 +1,19 @@
+{
+  "item_id": "item_007",
+  "config": "orchestrator",
+  "findings": [
+    {
+      "file": "alembic/autogenerate/compare/check_constraints.py",
+      "line_start": 67,
+      "line_end": 72,
+      "category": "ineffective_test",
+      "severity": "medium",
+      "confidence": 1.0,
+      "title": "Graceful handling of missing reflection support is broken",
+      "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because `_InspectorConv.get_check_constraints` raises `NotImplementedError` when reflection is not supported, but the code only catches `KeyError`. The tests are ineffective because they do not actually test the graceful handling of missing reflection support as intended, but rather crash.",
+      "evidence": "    try:\n        conn_ck_list = _InspectorConv(inspector).get_check_constraints(\n            tname, schema=schema\n        )\n    except KeyError:\n        return PriorityDispatchResult.CONTINUE",
+      "agent": "test_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}
