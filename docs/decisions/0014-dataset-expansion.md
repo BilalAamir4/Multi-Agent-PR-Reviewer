@@ -174,7 +174,9 @@ sqlite-utils 6, alembic 5, click 5, marshmallow 4, none above 6).
   requires only 0 collection or import errors).
 - **D12.** item_019 and item_020 are the first dataset items whose area stays under the 30K token limit
   (about 24.7K and 17.0K), so no specialist would spawn on them; the other 18 would spawn all three.
-  This is the existing behaviour of `should_spawn_for`, not changed here.
+  This is the existing behaviour of `should_spawn_for`, not changed here. **Superseded by stage 4C:**
+  the current per-item spawn table is in decision 0012, "Stage 4C" (diff-only estimate). Exactly six
+  items do not spawn (item_001, 002, 011, 012, 019, 020); the other 14 do.
 - **Clean items** item_016 and item_018 are marshmallow commits, the repository with the most room left.
 
 ### Extra accepted kinds

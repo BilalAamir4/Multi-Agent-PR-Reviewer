@@ -30,6 +30,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
 - The review graph, the verifier and the orchestrator as judge (stage 4B; `ReviewState`, idempotent
   nodes, `review_key`, verdicts and the keep-or-drop policy, row 4 and row 4b, cumulative cost):
   `docs/decisions/0013-review-graph-verifier-judge.md`.
+- Stage 5 evaluation protocol (run order, D6 reuse, frozen list, blind labelling, metrics, call budget):
+  `docs/decisions/0015-evaluation-protocol.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
