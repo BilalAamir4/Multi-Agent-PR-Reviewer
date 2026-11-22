@@ -162,3 +162,93 @@ def calls_on_pacific_day(results: Path, day: str | None = None) -> int:
             if pacific_day(entry["started_at"]) == day:
                 total += int(entry.get("model_calls") or 0)
     return total
+
+
+# --- Cost, time and per-agent figures (report and LangSmith experiments) ---------------------
+
+ORCHESTRATED = ("orchestrator", "subagents")  # their wait is the wall-clock union (decision 0009)
+
+
+def item_cost(run: dict[str, Any], config: str) -> dict[str, float]:
+    """One review's cost as the results table reports it: calls, tokens, net time (D7) and wait.
+
+    ``verifier`` and ``judge`` are cumulative (the saved ``subagents`` review plus the step,
+    decision 0013). Orchestrated runs remove the wall-clock union of waits (``wait_s_wall``), the
+    single agent its summed wait. A reused ``subagents`` item carries the review it was copied
+    from."""
+    if "cumulative" in run:
+        c = run["cumulative"]
+        return {
+            "model_calls": float(c["model_calls"]),
+            "tool_calls": float(c["tool_calls"]),
+            "input_tokens": float(c["input_tokens"]),
+            "output_tokens": float(c["output_tokens"]),
+            "net_s": float(c["net_duration_s"]),
+            "wait_s": float(c["wait_s_wall"]),
+        }
+    r = run["result"]
+    wait = r.get("wait_s_wall") if config in ORCHESTRATED else r.get("wait_s")
+    return {
+        "model_calls": float(r.get("model_calls") or 0),
+        "tool_calls": float(r.get("tool_calls") or 0),
+        "input_tokens": float(r.get("input_tokens") or 0),
+        "output_tokens": float(r.get("output_tokens") or 0),
+        "net_s": float(r.get("net_duration_s") or 0),
+        "wait_s": float(wait or 0),
+    }
+
+
+def estimated_cost(input_tokens: float, output_tokens: float) -> float | None:
+    """USD at the D5 prices in ``config/models.yaml`` (free tier: nothing is billed), or None."""
+    from reviewer.config import load_models_config
+
+    models = load_models_config()
+    spec = models.models[models.evaluation.model]
+    if spec.price_input_per_mtok is None or spec.price_output_per_mtok is None:
+        return None
+    return (
+        input_tokens * spec.price_input_per_mtok + output_tokens * spec.price_output_per_mtok
+    ) / 1e6
+
+
+def agent_breakdown(run: dict[str, Any], config: str) -> list[tuple[str, int, int, int]]:
+    """``(agent, model_calls, input_tokens, output_tokens)`` for the agents of one run.
+
+    Orchestrated runs: the orchestrator's own calls, each specialist's own pass (its ``own_*``
+    counters when it spawned, else its totals), and its sub-agents together as
+    ``<specialist>/sub``. ``single``, ``verifier`` and ``judge``: the one agent (for the judges,
+    the judge step alone; the review's cost is in ``item_cost``)."""
+    r = run["result"]
+    if config not in ORCHESTRATED:
+        name = {"single": "single", "verifier": "verifier", "judge": "judge"}[config]
+        return [(name, int(r.get("model_calls") or 0), int(r.get("input_tokens") or 0),
+                 int(r.get("output_tokens") or 0))]  # fmt: skip
+    rows = [(
+        "orchestrator",
+        int(r.get("own_model_calls") or 0),
+        int(r.get("own_input_tokens") or 0),
+        int(r.get("own_output_tokens") or 0),
+    )]  # fmt: skip
+    for child in r.get("children", []):
+        subs = child.get("children") or []
+        if subs:
+            rows.append((
+                child["agent"],
+                int(child.get("own_model_calls") or 0),
+                int(child.get("own_input_tokens") or 0),
+                int(child.get("own_output_tokens") or 0),
+            ))  # fmt: skip
+            rows.append((
+                f"{child['agent']}/sub",
+                sum(int(s.get("model_calls") or 0) for s in subs),
+                sum(int(s.get("input_tokens") or 0) for s in subs),
+                sum(int(s.get("output_tokens") or 0) for s in subs),
+            ))  # fmt: skip
+        else:
+            rows.append((
+                child["agent"],
+                int(child.get("model_calls") or 0),
+                int(child.get("input_tokens") or 0),
+                int(child.get("output_tokens") or 0),
+            ))  # fmt: skip
+    return rows
