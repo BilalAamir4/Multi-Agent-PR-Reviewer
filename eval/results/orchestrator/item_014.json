@@ -1,0 +1,32 @@
+{
+  "item_id": "item_014",
+  "config": "orchestrator",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 332,
+      "line_end": 332,
+      "category": "hardcoded_secret",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "Hardcoded secret in Database class",
+      "explanation": "A hardcoded string is assigned to `connection_passphrase` in the `Database` class. This looks like a secret or a default password, which should not be hardcoded in the source code.",
+      "evidence": "    connection_passphrase = \"kvGBUvT3Ie64L5nVKP5PbOaM\"",
+      "agent": "bug_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 812,
+      "line_end": 814,
+      "category": "sql_injection",
+      "severity": "high",
+      "confidence": 0.9,
+      "title": "SQL injection vulnerability in counts() method",
+      "explanation": "The code manually constructs a SQL query by formatting table names directly into the string. While it attempts to quote them, this is a dangerous pattern that can lead to SQL injection if the table names are not properly sanitized or if the quoting mechanism is bypassed. It should use parameterized queries instead.",
+      "evidence": "sql += ' where \"table\" in ({})'.format(\n                \", \".join(\"'{}'\".format(table) for table in tables_list)\n            )",
+      "agent": "security_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

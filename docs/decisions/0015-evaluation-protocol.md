@@ -201,3 +201,16 @@ model calls per item for a configuration and bucket once 3 or more items exist, 
 defaults (small 10, medium 30, large 70 for `orchestrator` and `subagents`; 10 for `single`; 3 per
 finding for `verifier`). Model calls counted are the `model_calls` of each result (retries are not
 counted there, so the real daily count can be slightly higher).
+
+## Progress
+
+### `orchestrator` complete (2026-11-23, day 2)
+
+20 items, spawning off, `security_mode: local`. Items 013 to 020 were run today; the first invocation
+was killed by the host for low memory after item_017 and resumed (no result re-run, no
+`rerun_required` items). Scoring decisions: 16 `scored` complete, 2 `scored` limit_reached, 1 `scored`
+partial (bug_reviewer limit_reached), 1 `scored` partial (security_reviewer limit_reached).
+Strict recall 0.36 (10 tp / 28 bugs), strict precision 0.67 (5 fp), location-only recall 0.43,
+false alarms per clean PR 0.17. Mean tokens 164298 in / 1249 out, about $0.043 per review (D5
+estimate), median net time 45.6 s, median wait 76.5 s (`wait_s_wall`). Full table:
+`eval/results/orchestrator/summary.md`.

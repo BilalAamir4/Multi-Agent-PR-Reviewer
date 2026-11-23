@@ -1,0 +1,847 @@
+{
+  "config": "orchestrator",
+  "line_tolerance": 3,
+  "manual_labels": false,
+  "aggregates": {
+    "strict": {
+      "all": {
+        "items": 20,
+        "clean_items": 6,
+        "tp": 10,
+        "fp": 5,
+        "fn": 18,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.35714285714285715,
+        "precision": 0.6666666666666666,
+        "false_alarms_per_clean_pr": 0.16666666666666666,
+        "real_bug_labels": 0,
+        "unlabelled_unmatched": 5,
+        "adjusted_precision": null
+      },
+      "small": {
+        "items": 6,
+        "clean_items": 2,
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.8,
+        "precision": 1.0,
+        "false_alarms_per_clean_pr": 0.0,
+        "real_bug_labels": 0,
+        "unlabelled_unmatched": 0,
+        "adjusted_precision": null
+      },
+      "medium": {
+        "items": 4,
+        "clean_items": 1,
+        "tp": 1,
+        "fp": 1,
+        "fn": 5,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.16666666666666666,
+        "precision": 0.5,
+        "false_alarms_per_clean_pr": 0.0,
+        "real_bug_labels": 0,
+        "unlabelled_unmatched": 1,
+        "adjusted_precision": null
+      },
+      "large": {
+        "items": 10,
+        "clean_items": 3,
+        "tp": 5,
+        "fp": 4,
+        "fn": 12,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.29411764705882354,
+        "precision": 0.5555555555555556,
+        "false_alarms_per_clean_pr": 0.3333333333333333,
+        "real_bug_labels": 0,
+        "unlabelled_unmatched": 4,
+        "adjusted_precision": null
+      }
+    },
+    "location_only": {
+      "all": {
+        "items": 20,
+        "clean_items": 6,
+        "tp": 12,
+        "fp": 3,
+        "fn": 16,
+        "duplicates": 1,
+        "discarded": 0,
+        "recall": 0.42857142857142855,
+        "precision": 0.8,
+        "false_alarms_per_clean_pr": 0.16666666666666666
+      },
+      "small": {
+        "items": 6,
+        "clean_items": 2,
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.8,
+        "precision": 1.0,
+        "false_alarms_per_clean_pr": 0.0
+      },
+      "medium": {
+        "items": 4,
+        "clean_items": 1,
+        "tp": 2,
+        "fp": 0,
+        "fn": 4,
+        "duplicates": 0,
+        "discarded": 0,
+        "recall": 0.3333333333333333,
+        "precision": 1.0,
+        "false_alarms_per_clean_pr": 0.0
+      },
+      "large": {
+        "items": 10,
+        "clean_items": 3,
+        "tp": 6,
+        "fp": 3,
+        "fn": 11,
+        "duplicates": 1,
+        "discarded": 0,
+        "recall": 0.35294117647058826,
+        "precision": 0.6666666666666666,
+        "false_alarms_per_clean_pr": 0.3333333333333333
+      }
+    }
+  },
+  "items": [
+    {
+      "item_id": "item_001",
+      "size_bucket": "small",
+      "is_clean": false,
+      "bugs": 1,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_001#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_001#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_002",
+      "size_bucket": "small",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_003",
+      "size_bucket": "medium",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_003#0"
+          ],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_003#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_004",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 3,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_004#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_004#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_005",
+      "size_bucket": "large",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_006",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_006#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_006#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_007",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 3,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 3,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_007#0"
+          ],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b2",
+              "item_007#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_008",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_008#0"
+          ],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_008#0"
+          ],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_009",
+      "size_bucket": "large",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_009#0"
+          ],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [
+            "item_009#0"
+          ],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_010",
+      "size_bucket": "medium",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_011",
+      "size_bucket": "small",
+      "is_clean": false,
+      "bugs": 1,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_011#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_011#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_012",
+      "size_bucket": "small",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_013",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 2,
+      "in_diff": 2,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 1,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_013#1"
+            ]
+          ],
+          "unmatched_findings": [
+            "item_013#0"
+          ],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 1,
+          "duplicates": 1,
+          "matched": [
+            [
+              "b1",
+              "item_013#0"
+            ]
+          ],
+          "unmatched_findings": [
+            "item_013#1"
+          ],
+          "duplicate_findings": [
+            "item_013#1"
+          ]
+        }
+      }
+    },
+    {
+      "item_id": "item_014",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 3,
+      "findings": 2,
+      "in_diff": 2,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 2,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_014#1"
+            ],
+            [
+              "b2",
+              "item_014#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 2,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_014#1"
+            ],
+            [
+              "b2",
+              "item_014#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_015",
+      "size_bucket": "large",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 2,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_016",
+      "size_bucket": "large",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_017",
+      "size_bucket": "medium",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_017#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_017#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_018",
+      "size_bucket": "medium",
+      "is_clean": true,
+      "bugs": 0,
+      "findings": 0,
+      "in_diff": 0,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_019",
+      "size_bucket": "small",
+      "is_clean": false,
+      "bugs": 2,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b2",
+              "item_019#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 1,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b2",
+              "item_019#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    },
+    {
+      "item_id": "item_020",
+      "size_bucket": "small",
+      "is_clean": false,
+      "bugs": 1,
+      "findings": 1,
+      "in_diff": 1,
+      "discarded": 0,
+      "discarded_findings": [],
+      "modes": {
+        "strict": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_020#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        },
+        "location_only": {
+          "tp": 1,
+          "fn": 0,
+          "fp": 0,
+          "duplicates": 0,
+          "matched": [
+            [
+              "b1",
+              "item_020#0"
+            ]
+          ],
+          "unmatched_findings": [],
+          "duplicate_findings": []
+        }
+      }
+    }
+  ]
+}

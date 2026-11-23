@@ -1,0 +1,320 @@
+{
+  "result": {
+    "status": "complete",
+    "agent": "orchestrator",
+    "notes": [],
+    "error_class": null,
+    "error": null,
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": "The pull request updates `src/marshmallow/schema.py` to correctly handle `data_key` mapping when `ValidationError` is raised within schema validators. The changes ensure that error messages are associated with the correct `data_key` instead of the internal field name. The bug and test reviewers confirmed the logic is sound and the new tests provide adequate coverage.",
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "4eda79561a8c",
+    "limits": {
+      "max_model_calls": 8,
+      "max_tool_calls": 12,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_018",
+    "model_calls": 17,
+    "tool_calls": 15,
+    "tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 3,
+      "read_diff": 4,
+      "read_file": 4,
+      "run_tests": 1,
+      "search_code": 1
+    },
+    "input_tokens": 85641,
+    "output_tokens": 881,
+    "duration_s": 93.14,
+    "wait_s": 105.281,
+    "net_duration_s": 26.281,
+    "waits_by_reason": {
+      "rate_limiter": 75.281,
+      "retry_server": 30.0
+    },
+    "retries_by_reason": {
+      "retry_server": 2
+    },
+    "langsmith_run_id": "c8955e69-875e-4354-8c2c-7e1fbb641640",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "c8955e69-875e-4354-8c2c-7e1fbb641640",
+        "model_calls": 4,
+        "tool_calls": {
+          "call_bug_reviewer": 1,
+          "call_test_reviewer": 1,
+          "list_changed_files": 1,
+          "read_diff": 1
+        },
+        "input_tokens": 10107,
+        "output_tokens": 389,
+        "outcome": "complete"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [
+      {
+        "status": "complete",
+        "agent": "bug_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [],
+        "dropped": [],
+        "summary": "The change updates `_run_validator` in `src/marshmallow/schema.py` to correctly map `field_name` to `data_key` when storing `ValidationError` messages. It ensures that if a field has a `data_key` defined, that key is used in the error dictionary instead of the internal field name. The logic correctly handles field lookups in both `self.fields` and `self.declared_fields` and accounts for schema-level errors.",
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "0a0cf383d913",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": null
+        },
+        "evaluation": true,
+        "item_id": "item_018",
+        "model_calls": 4,
+        "tool_calls": 3,
+        "tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 1
+        },
+        "input_tokens": 15673,
+        "output_tokens": 184,
+        "duration_s": 60.062,
+        "wait_s": 47.719,
+        "net_duration_s": 12.343,
+        "waits_by_reason": {
+          "rate_limiter": 32.719,
+          "retry_server": 15.0
+        },
+        "retries_by_reason": {
+          "retry_server": 1
+        },
+        "langsmith_run_id": "bc98f66d-95e2-444b-ac06-ad9ccb66fc2f",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "bc98f66d-95e2-444b-ac06-ad9ccb66fc2f",
+            "model_calls": 4,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 1
+            },
+            "input_tokens": 15673,
+            "output_tokens": 184,
+            "outcome": "complete"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [],
+        "spawn": null,
+        "own_model_calls": 0,
+        "own_tool_calls": 0,
+        "own_tool_calls_by_tool": {},
+        "own_input_tokens": 0,
+        "own_output_tokens": 0,
+        "wait_s_sum": 0.0,
+        "wait_s_wall": 0.0
+      },
+      {
+        "status": "complete",
+        "agent": "test_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [],
+        "dropped": [],
+        "summary": "The pull request correctly updates `Schema._run_validator` to use the `data_key` of a field when a `ValidationError` is raised from a schema validator, ensuring that errors are correctly mapped to the input data keys. The new tests in `tests/test_decorators.py` adequately cover this new logic by verifying that both string and dictionary-based `ValidationError` messages are correctly associated with the `data_key` in the final error output.",
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "c7c71887b22e",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": 3
+        },
+        "evaluation": true,
+        "item_id": "item_018",
+        "model_calls": 9,
+        "tool_calls": 8,
+        "tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 2,
+          "read_file": 3,
+          "run_tests": 1,
+          "search_code": 1
+        },
+        "input_tokens": 59861,
+        "output_tokens": 308,
+        "duration_s": 62.078,
+        "wait_s": 42.562,
+        "net_duration_s": 19.516,
+        "waits_by_reason": {
+          "rate_limiter": 42.562
+        },
+        "retries_by_reason": {},
+        "langsmith_run_id": "49a08144-6400-4108-8c9d-5a9555a5826d",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "49a08144-6400-4108-8c9d-5a9555a5826d",
+            "model_calls": 9,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 2,
+              "read_file": 3,
+              "run_tests": 1,
+              "search_code": 1
+            },
+            "input_tokens": 59861,
+            "output_tokens": 308,
+            "outcome": "complete"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [],
+        "spawn": null,
+        "own_model_calls": 0,
+        "own_tool_calls": 0,
+        "own_tool_calls_by_tool": {},
+        "own_input_tokens": 0,
+        "own_output_tokens": 0,
+        "wait_s_sum": 0.0,
+        "wait_s_wall": 0.0
+      }
+    ],
+    "spawn": null,
+    "own_model_calls": 4,
+    "own_tool_calls": 4,
+    "own_tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 1,
+      "read_diff": 1
+    },
+    "own_input_tokens": 10107,
+    "own_output_tokens": 389,
+    "wait_s_sum": 105.281,
+    "wait_s_wall": 66.859,
+    "plan": [
+      {
+        "specialist": "bug_reviewer",
+        "called": true,
+        "reason": "The change modifies core logic in `src/marshmallow/schema.py` for handling validation errors and field lookups."
+      },
+      {
+        "specialist": "security_reviewer",
+        "called": false,
+        "reason": "The change does not involve security-sensitive operations like database access, shell calls, or untrusted input parsing."
+      },
+      {
+        "specialist": "test_reviewer",
+        "called": true,
+        "reason": "The PR includes new tests in `tests/test_decorators.py` that need verification for coverage of the new logic."
+      }
+    ]
+  },
+  "security_mode": "local",
+  "scoring": {
+    "decision": "scored",
+    "cause": "complete"
+  },
+  "spawn_enabled": false,
+  "run_log": [
+    {
+      "plan": [
+        {
+          "specialist": "bug_reviewer",
+          "called": true,
+          "reason": "The change modifies core logic in `src/marshmallow/schema.py` for handling validation errors and field lookups."
+        },
+        {
+          "specialist": "security_reviewer",
+          "called": false,
+          "reason": "The change does not involve security-sensitive operations like database access, shell calls, or untrusted input parsing."
+        },
+        {
+          "specialist": "test_reviewer",
+          "called": true,
+          "reason": "The PR includes new tests in `tests/test_decorators.py` that need verification for coverage of the new logic."
+        }
+      ],
+      "children": {
+        "bug_reviewer": "complete",
+        "test_reviewer": "complete"
+      },
+      "wait_s_sum": 105.281,
+      "wait_s_wall": 66.859,
+      "own_model_calls": 4,
+      "own_input_tokens": 10107,
+      "own_output_tokens": 389,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": false,
+      "spawn_max_concurrency": 3,
+      "spawned": {
+        "bug_reviewer": {
+          "spawned": false,
+          "subagents": 0,
+          "model_calls": 4
+        },
+        "test_reviewer": {
+          "spawned": false,
+          "subagents": 0,
+          "model_calls": 9
+        }
+      },
+      "started_at": "2026-11-23T09:38:09+00:00",
+      "reason": "first run",
+      "status": "complete",
+      "scoring": {
+        "decision": "scored",
+        "cause": "complete"
+      },
+      "retries_by_reason": {
+        "retry_server": 2
+      },
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 17,
+      "tool_calls": 15,
+      "input_tokens": 85641,
+      "output_tokens": 881,
+      "duration_s": 93.14,
+      "wait_s": 105.281,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "c8955e69-875e-4354-8c2c-7e1fbb641640",
+          "model_calls": 4,
+          "tool_calls": {
+            "call_bug_reviewer": 1,
+            "call_test_reviewer": 1,
+            "list_changed_files": 1,
+            "read_diff": 1
+          },
+          "input_tokens": 10107,
+          "output_tokens": 389,
+          "outcome": "complete"
+        }
+      ]
+    }
+  ]
+}
