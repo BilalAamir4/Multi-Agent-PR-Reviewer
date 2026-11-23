@@ -1,0 +1,32 @@
+{
+  "item_id": "item_003",
+  "config": "subagents",
+  "findings": [
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 3096,
+      "line_end": 3096,
+      "category": "other",
+      "severity": "high",
+      "confidence": 0.95,
+      "title": "SQL injection vulnerability in drop_index",
+      "explanation": "The `drop_index` method constructs the `DROP INDEX` SQL statement using string formatting with the `index_name` parameter. This is vulnerable to SQL injection if an attacker can control the `index_name` argument. The `quote_identifier` function should be used to safely quote the index name.",
+      "evidence": "self.db.execute(\"DROP INDEX {}\".format(index_name))",
+      "agent": "bug_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "file": "sqlite_utils/db.py",
+      "line_start": 3096,
+      "line_end": 3096,
+      "category": "sql_injection",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "SQL injection in drop_index method via unquoted identifier",
+      "explanation": "The `drop_index` method uses string formatting to construct the `DROP INDEX` SQL statement. While the method checks if the index exists in `self.indexes` first, the `index_name` is still directly interpolated into the SQL string. In SQLite, identifiers like index names should be properly quoted (e.g., using `[]`, `\"\"`, or `` ` ``) to prevent SQL injection if an attacker can control the `index_name` input. Even if the current implementation validates the index name against existing indexes, it is safer to use proper identifier quoting.",
+      "evidence": "        self.db.execute(\"DROP INDEX {}\".format(index_name))",
+      "agent": "security_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}
