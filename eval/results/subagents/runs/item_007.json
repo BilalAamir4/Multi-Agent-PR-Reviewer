@@ -1,15 +1,139 @@
 {
   "result": {
-    "status": "error",
+    "status": "partial",
     "agent": "orchestrator",
-    "notes": [],
-    "error_class": "RetriesExhausted",
-    "error": "evaluation model 'gemini-3.1-flash-lite' still failing with SERVER after 6 retries",
+    "notes": [
+      "bug_reviewer ended partial; its findings are kept"
+    ],
+    "error_class": null,
+    "error": null,
     "limit": null,
     "reset_at": null,
-    "findings": [],
-    "dropped": [],
-    "summary": null,
+    "findings": [
+      {
+        "file": "alembic/autogenerate/render.py",
+        "line_start": 453,
+        "line_end": 458,
+        "category": "other",
+        "severity": "medium",
+        "confidence": 1.0,
+        "title": "Unnecessary schema=None argument in generated code",
+        "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `schema` is `None` (via `_ident(op.schema)` which returns `None` if `op.schema` is `None`). This causes the generated code to differ from the expected output in tests, which expect `schema` to be omitted if it is `None`. The logic should only add `schema=` if `op.schema` is not `None`.",
+        "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))\n    return \"%(prefix)screate_check_constraint(%(args)s)\" % {\n        \"prefix\": _alembic_autogenerate_prefix(autogen_context),\n        \"args\": \", \".join(args),\n    }",
+        "agent": "test_reviewer/sub1",
+        "model": "gemini-3.1-flash-lite"
+      },
+      {
+        "file": "alembic/autogenerate/compare/util.py",
+        "line_start": 268,
+        "line_end": 279,
+        "category": "other",
+        "severity": "high",
+        "confidence": 1.0,
+        "title": "Missing graceful handling for missing check constraint reflection support",
+        "explanation": "The `get_check_constraints` method in `_SQLA2InspectorConv` sets `optional=False` in `_return_from_cache`. This causes a `NotImplementedError` (or other errors if the dialect doesn't support it) when the inspector doesn't support check constraint reflection, instead of returning an empty list or handling it gracefully as the design implies. The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail because of this.",
+        "evidence": "    def get_check_constraints(\n        self, tname: str, schema: str | None\n    ) -> list[ReflectedCheckConstraint]:\n        return self._return_from_cache(\n            tname,\n            schema,\n            \"alembic_check_constraints\",\n            self.inspector.get_check_constraints,\n            apply_constraint_conv=True,\n            optional=False,\n        )",
+        "agent": "test_reviewer/sub2",
+        "model": "gemini-3.1-flash-lite"
+      },
+      {
+        "file": "alembic/ddl/impl.py",
+        "line_start": 846,
+        "line_end": 852,
+        "category": "other",
+        "severity": "medium",
+        "confidence": 1.0,
+        "title": "Default check constraint comparison ignores expression changes",
+        "explanation": "The default implementation of `compare_check_constraint` always returns `ComparisonResult.Equal()`, which means that any two check constraints with the same name will be considered equal, regardless of their actual expression. While the PR description acknowledges this as a design choice for name-based comparison, it effectively makes the autogenerate feature ignore changes to the expression of a check constraint, which might be unexpected for users who expect autogenerate to detect such changes. This is a fundamental limitation of the current implementation.",
+        "evidence": "    def compare_check_constraint(\n        self,\n        metadata_constraint: CheckConstraint,\n        reflected_constraint: CheckConstraint,\n    ) -> ComparisonResult:\n        return ComparisonResult.Equal()",
+        "agent": "test_reviewer/sub3",
+        "model": "gemini-3.1-flash-lite"
+      },
+      {
+        "file": "tests/test_autogen_check_constraints.py",
+        "line_start": 726,
+        "line_end": 729,
+        "category": "ineffective_test",
+        "severity": "low",
+        "confidence": 1.0,
+        "title": "Test expects incorrect rendered output format",
+        "explanation": "The test expects the rendered output to not include `schema=None`, but the implementation of `_add_check_constraint` in `alembic/autogenerate/render.py` (lines 453-454) explicitly adds `schema=%r` to the arguments if not in batch mode, even if the schema is None. The test fails because it expects a different format than what the code produces. The test is ineffective because it fails on a trivial formatting difference that is likely intended or at least consistent with other renderers.",
+        "evidence": "        eq_ignore_whitespace(\n            autogenerate.render_op_text(self.autogen_context, op_obj),\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )",
+        "agent": "test_reviewer/sub5",
+        "model": "gemini-3.1-flash-lite"
+      }
+    ],
+    "dropped": [
+      {
+        "draft": {
+          "file": "tests/test_autogen_check_constraints.py",
+          "line_start": 726,
+          "line_end": 736,
+          "category": "ineffective_test",
+          "severity": "medium",
+          "confidence": 1.0,
+          "title": "Test failure due to brittle assertion on rendered output",
+          "explanation": "The test `test_render_add_check_constraint` (and `test_render_add_check_constraint_string_sqltext`) fails because the rendered output includes `schema=None`, while the assertion expects it to be omitted. This indicates that the test is brittle or that the rendering logic is inconsistent with the test's expectations. Since the test fails, it is not effectively validating the intended behavior in its current state.",
+          "evidence": "    def test_render_add_check_constraint(self):\n        m1 = MetaData()\n        m2 = MetaData()\n\n        Table(\n            \"t\",\n            m1,\n            Column(\"x\", Integer),\n        )\n\n        Table(\n            \"t\",\n            m2,\n            Column(\"x\", Integer),\n            CheckConstraint(\"x > 0\", name=\"ck_x_positive\"),\n        )\n\n        diffs = self._fixture(m1, m2)\n\n        op = ops.CreateCheckConstraintOp.from_constraint(\n            m2.tables[\"t\"].constraints.pop()\n        )\n        render = autogenerate.render_op_text(\n            MigrationContext.configure(dialect=config.db.dialect), op\n        )\n        eq_ignore_whitespace(\n            render,\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )"
+        },
+        "reason": "evidence",
+        "detail": "[test_reviewer] [test_reviewer/sub4] evidence does not match any contiguous run of lines in the file"
+      },
+      {
+        "draft": {
+          "file": "tests/test_autogen_check_constraints.py",
+          "line_start": 663,
+          "line_end": 663,
+          "category": "other",
+          "severity": "medium",
+          "confidence": 1.0,
+          "title": "Reflection helper raises NotImplementedError instead of graceful skip",
+          "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because the `_InspectorConv` helper in `alembic/autogenerate/compare/util.py` does not implement `get_check_constraints` for the dialect being tested, and it raises `NotImplementedError` instead of returning an empty list or handling the missing reflection capability gracefully as the test expects.",
+          "evidence": "    conn_ck_list = _InspectorConv(inspector).get_check_constraints(\nalembic/autogenerate/compare/util.py:271: in get_check_constraints\n    return self._return_from_cache(\nalembic/autogenerate/compare/util.py:210: in _return_from_cache\n    raise NotImplementedError()"
+        },
+        "reason": "evidence",
+        "detail": "[test_reviewer] [test_reviewer/sub5] evidence does not match any contiguous run of lines in the file"
+      },
+      {
+        "draft": {
+          "file": "alembic/autogenerate/render.py",
+          "line_start": 453,
+          "line_end": 454,
+          "category": "other",
+          "severity": "medium",
+          "confidence": 1.0,
+          "title": "Unnecessary schema=None argument in generated code",
+          "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `op.schema` is `None`. This results in rendered code like `op.create_check_constraint(..., schema=None)`, which is unnecessary and causes test failures when compared against expected output that omits the schema argument.",
+          "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))",
+          "agent": "test_reviewer",
+          "model": "gemini-3.1-flash-lite",
+          "finding_id": "test_reviewer#1",
+          "duplicate_of": "test_reviewer/sub1#1"
+        },
+        "reason": "duplicate",
+        "detail": "[test_reviewer] test_reviewer#1 duplicates test_reviewer/sub1#1 (alembic/autogenerate/render.py:453-458, other, confidence 1.0), which is kept"
+      },
+      {
+        "draft": {
+          "file": "alembic/autogenerate/compare/util.py",
+          "line_start": 271,
+          "line_end": 278,
+          "category": "other",
+          "severity": "high",
+          "confidence": 1.0,
+          "title": "Missing graceful handling for missing check constraint reflection support",
+          "explanation": "The `get_check_constraints` method in `alembic/autogenerate/compare/util.py` sets `optional=False` when calling `_return_from_cache`. This causes `NotImplementedError` to be raised when the database dialect does not support check constraint reflection, instead of handling it gracefully as a missing feature. Other reflection methods (like `get_foreign_keys`) correctly allow `optional=True` (implicitly or explicitly).",
+          "evidence": "    return self._return_from_cache(\n        tname,\n        schema,\n        \"alembic_check_constraints\",\n        self.inspector.get_check_constraints,\n        apply_constraint_conv=True,\n        optional=False,\n    )",
+          "agent": "test_reviewer",
+          "model": "gemini-3.1-flash-lite",
+          "finding_id": "test_reviewer#2",
+          "duplicate_of": "test_reviewer/sub2#1"
+        },
+        "reason": "duplicate",
+        "detail": "[test_reviewer] test_reviewer#2 duplicates test_reviewer/sub2#1 (alembic/autogenerate/compare/util.py:268-279, other, confidence 1.0), which is kept"
+      }
+    ],
+    "summary": "The pull request adds autogenerate support for detecting CHECK constraints. I have reviewed the changes with the bug and test specialists. The test reviewer identified some issues with the implementation and tests, which should be addressed.",
     "model_id": "gemini-3.1-flash-lite",
     "prompt_version": "4eda79561a8c",
     "limits": {
@@ -19,49 +143,1362 @@
     },
     "evaluation": true,
     "item_id": "item_007",
-    "model_calls": 0,
-    "tool_calls": 0,
-    "tool_calls_by_tool": {},
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "duration_s": 306.532,
-    "wait_s": 285.0,
-    "net_duration_s": 21.532,
+    "model_calls": 107,
+    "tool_calls": 96,
+    "tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 13,
+      "read_diff": 29,
+      "read_file": 38,
+      "run_tests": 6,
+      "search_code": 8
+    },
+    "input_tokens": 1006826,
+    "output_tokens": 5976,
+    "duration_s": 505.422,
+    "wait_s": 1607.16,
+    "net_duration_s": 96.187,
     "waits_by_reason": {
-      "retry_server": 285.0
+      "rate_limiter": 1592.16,
+      "retry_server": 15.0
     },
     "retries_by_reason": {
-      "retry_server": 6
+      "retry_server": 1
     },
-    "langsmith_run_id": "a9cf41b1-d64b-4ea3-b4d7-355cdbffb9a2",
+    "langsmith_run_id": "f4f0900a-c807-4427-b209-4e0424238184",
     "attempts": [
       {
         "model": "gemini-3.1-flash-lite",
-        "langsmith_run_id": "a9cf41b1-d64b-4ea3-b4d7-355cdbffb9a2",
-        "model_calls": 0,
-        "tool_calls": {},
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        "langsmith_run_id": "f4f0900a-c807-4427-b209-4e0424238184",
+        "model_calls": 4,
+        "tool_calls": {
+          "call_bug_reviewer": 1,
+          "call_test_reviewer": 1,
+          "list_changed_files": 1,
+          "read_diff": 1
+        },
+        "input_tokens": 15815,
+        "output_tokens": 356,
+        "outcome": "complete"
       }
     ],
     "transport": null,
     "transport_detail": null,
-    "children": [],
+    "children": [
+      {
+        "status": "partial",
+        "agent": "bug_reviewer",
+        "notes": [
+          "bug_reviewer/sub2 ended limit_reached; its findings are kept"
+        ],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [],
+        "dropped": [],
+        "summary": "The pull request adds autogenerate support for detecting named CHECK constraints. It introduces a new comparator in `alembic/autogenerate/compare/check_constraints.py` and integrates it into the autogenerate process. The implementation correctly handles added, removed, and changed named constraints, and provides a hook for per-dialect expression comparison.",
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "5271f6cf460a",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": null
+        },
+        "evaluation": true,
+        "item_id": "item_007",
+        "model_calls": 56,
+        "tool_calls": 51,
+        "tool_calls_by_tool": {
+          "list_changed_files": 6,
+          "read_diff": 17,
+          "read_file": 25,
+          "search_code": 3
+        },
+        "input_tokens": 534674,
+        "output_tokens": 1959,
+        "duration_s": 451.344,
+        "wait_s": 786.878,
+        "net_duration_s": 85.406,
+        "waits_by_reason": {
+          "rate_limiter": 786.878
+        },
+        "retries_by_reason": {},
+        "langsmith_run_id": "c202c4ff-0a6f-4eaf-9a59-e597c12b02d4",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "c202c4ff-0a6f-4eaf-9a59-e597c12b02d4",
+            "model_calls": 11,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 4,
+              "read_file": 4,
+              "search_code": 1
+            },
+            "input_tokens": 121833,
+            "output_tokens": 365,
+            "outcome": "complete"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub1",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for detecting named CHECK constraints. It introduces a new comparator that compares constraints by name, handling additions, removals, and changes by dropping and re-adding the constraint. The implementation correctly uses existing autogenerate infrastructure and filters.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "c15f63c256b4",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 5,
+            "tool_calls": 4,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 2,
+              "read_file": 1
+            },
+            "input_tokens": 20053,
+            "output_tokens": 160,
+            "duration_s": 62.484,
+            "wait_s": 40.781,
+            "net_duration_s": 21.703,
+            "waits_by_reason": {
+              "rate_limiter": 40.781
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "a614f5ff-959f-488d-a206-78d6dfb3b80b",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "a614f5ff-959f-488d-a206-78d6dfb3b80b",
+                "model_calls": 5,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 2,
+                  "read_file": 1
+                },
+                "input_tokens": 20053,
+                "output_tokens": 160,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "limit_reached",
+            "agent": "bug_reviewer/sub2",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": "max_model_calls",
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": null,
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "e1e99020ca04",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 15,
+            "tool_calls": 15,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 3,
+              "read_file": 10,
+              "search_code": 1
+            },
+            "input_tokens": 108537,
+            "output_tokens": 560,
+            "duration_s": 323.766,
+            "wait_s": 258.971,
+            "net_duration_s": 64.795,
+            "waits_by_reason": {
+              "rate_limiter": 258.971
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "d48912cc-931d-43d3-a177-65f02015e338",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "d48912cc-931d-43d3-a177-65f02015e338",
+                "model_calls": 15,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 3,
+                  "read_file": 10,
+                  "search_code": 1
+                },
+                "input_tokens": 108537,
+                "output_tokens": 560,
+                "outcome": "limit_reached"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub3",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for detecting added, removed, and changed named CHECK constraints. It introduces a new comparator in `alembic/autogenerate/compare/check_constraints.py` and integrates it into the autogenerate process via `alembic/ddl/_autogen.py` and `alembic/ddl/impl.py`. The implementation correctly handles named constraints and provides a hook for per-dialect expression comparison.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "006a29f1d1c8",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 7,
+            "tool_calls": 6,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 3,
+              "read_file": 2
+            },
+            "input_tokens": 41753,
+            "output_tokens": 256,
+            "duration_s": 263.547,
+            "wait_s": 234.016,
+            "net_duration_s": 29.531,
+            "waits_by_reason": {
+              "rate_limiter": 234.016
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "d984d49f-7af8-4632-94f9-b022b25bb809",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "d984d49f-7af8-4632-94f9-b022b25bb809",
+                "model_calls": 7,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 3,
+                  "read_file": 2
+                },
+                "input_tokens": 41753,
+                "output_tokens": 256,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub4",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for CHECK constraint detection. I reviewed the changes in `alembic/testing/requirements.py` and found no logic defects. The addition of the `check_constraint_reflection` property to `SuiteRequirements` is a straightforward extension to support testing this new functionality.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "cb7019441444",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 4,
+            "tool_calls": 3,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 1
+            },
+            "input_tokens": 15231,
+            "output_tokens": 140,
+            "duration_s": 76.719,
+            "wait_s": 70.624,
+            "net_duration_s": 6.095,
+            "waits_by_reason": {
+              "rate_limiter": 70.624
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "de055d87-0ca0-4b07-84d9-387c2627d33d",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "de055d87-0ca0-4b07-84d9-387c2627d33d",
+                "model_calls": 4,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 1,
+                  "read_file": 1
+                },
+                "input_tokens": 15231,
+                "output_tokens": 140,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub5",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for detecting named CHECK constraints. It introduces a new comparator in `alembic/autogenerate/compare/check_constraints.py` that compares metadata and reflected check constraints by name. The implementation correctly handles added, removed, and changed constraints, and integrates with the existing autogenerate plugin system. I have reviewed the logic and found it to be sound, with appropriate handling of edge cases like unnamed constraints and type-bound constraints.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "9aee18b7405f",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 14,
+            "tool_calls": 13,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 4,
+              "read_file": 7,
+              "search_code": 1
+            },
+            "input_tokens": 227267,
+            "output_tokens": 478,
+            "duration_s": 229.937,
+            "wait_s": 150.329,
+            "net_duration_s": 79.608,
+            "waits_by_reason": {
+              "rate_limiter": 150.329
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "0f9dbc91-f781-4cd0-aa03-142cc677dae9",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "0f9dbc91-f781-4cd0-aa03-142cc677dae9",
+                "model_calls": 14,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 4,
+                  "read_file": 7,
+                  "search_code": 1
+                },
+                "input_tokens": 227267,
+                "output_tokens": 478,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          }
+        ],
+        "spawn": {
+          "enabled": true,
+          "spawned": true,
+          "triggers": [
+            "files"
+          ],
+          "py_files": 12,
+          "estimated_tokens": 15844,
+          "min_py_files": 4,
+          "max_specialist_prompt_tokens": 30000,
+          "area": [
+            "alembic/__init__.py",
+            "alembic/autogenerate/compare/__init__.py",
+            "alembic/autogenerate/compare/check_constraints.py",
+            "alembic/autogenerate/compare/util.py",
+            "alembic/autogenerate/render.py",
+            "alembic/ddl/_autogen.py",
+            "alembic/ddl/impl.py",
+            "alembic/runtime/environment.py",
+            "alembic/testing/requirements.py",
+            "tests/test_autogen_check_constraints.py",
+            "tests/test_autogen_composition.py",
+            "tests/test_autogen_diffs.py"
+          ],
+          "batches": [
+            {
+              "index": 1,
+              "agent": "bug_reviewer/sub1",
+              "files": [
+                "alembic/__init__.py",
+                "alembic/autogenerate/render.py"
+              ],
+              "estimated_tokens": 541,
+              "over_budget": false
+            },
+            {
+              "index": 2,
+              "agent": "bug_reviewer/sub2",
+              "files": [
+                "alembic/autogenerate/compare/__init__.py",
+                "alembic/autogenerate/compare/check_constraints.py",
+                "alembic/autogenerate/compare/util.py"
+              ],
+              "estimated_tokens": 3406,
+              "over_budget": false
+            },
+            {
+              "index": 3,
+              "agent": "bug_reviewer/sub3",
+              "files": [
+                "alembic/ddl/_autogen.py",
+                "alembic/ddl/impl.py",
+                "alembic/runtime/environment.py"
+              ],
+              "estimated_tokens": 1624,
+              "over_budget": false
+            },
+            {
+              "index": 4,
+              "agent": "bug_reviewer/sub4",
+              "files": [
+                "alembic/testing/requirements.py"
+              ],
+              "estimated_tokens": 168,
+              "over_budget": false
+            },
+            {
+              "index": 5,
+              "agent": "bug_reviewer/sub5",
+              "files": [
+                "tests/test_autogen_check_constraints.py",
+                "tests/test_autogen_composition.py",
+                "tests/test_autogen_diffs.py"
+              ],
+              "estimated_tokens": 10105,
+              "over_budget": false
+            }
+          ],
+          "file_limit_used": 3,
+          "budget_exceeded": false,
+          "token_budget_ignored": false,
+          "max_concurrency": 3,
+          "fan_out": {
+            "wall_s": 369.156,
+            "wait_s_wall": 333.781,
+            "wait_s_sum": 754.721,
+            "net_s": 35.375,
+            "timings": [
+              {
+                "agent": "bug_reviewer/sub1",
+                "start_s": 0.016,
+                "end_s": 62.5,
+                "status": "complete"
+              },
+              {
+                "agent": "bug_reviewer/sub2",
+                "start_s": 0.047,
+                "end_s": 323.813,
+                "status": "limit_reached"
+              },
+              {
+                "agent": "bug_reviewer/sub3",
+                "start_s": 0.047,
+                "end_s": 263.594,
+                "status": "complete"
+              },
+              {
+                "agent": "bug_reviewer/sub4",
+                "start_s": 62.5,
+                "end_s": 139.219,
+                "status": "complete"
+              },
+              {
+                "agent": "bug_reviewer/sub5",
+                "start_s": 139.219,
+                "end_s": 369.156,
+                "status": "complete"
+              }
+            ]
+          },
+          "cross_file": {
+            "status": "complete",
+            "duration_s": 82.188,
+            "wait_s": 32.157,
+            "net_duration_s": 50.031,
+            "model_calls": 11
+          }
+        },
+        "own_model_calls": 11,
+        "own_tool_calls": 10,
+        "own_tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 4,
+          "read_file": 4,
+          "search_code": 1
+        },
+        "own_input_tokens": 121833,
+        "own_output_tokens": 365,
+        "wait_s_sum": 786.878,
+        "wait_s_wall": 365.938
+      },
+      {
+        "status": "complete",
+        "agent": "test_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [
+          {
+            "file": "alembic/autogenerate/render.py",
+            "line_start": 453,
+            "line_end": 458,
+            "category": "other",
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Unnecessary schema=None argument in generated code",
+            "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `schema` is `None` (via `_ident(op.schema)` which returns `None` if `op.schema` is `None`). This causes the generated code to differ from the expected output in tests, which expect `schema` to be omitted if it is `None`. The logic should only add `schema=` if `op.schema` is not `None`.",
+            "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))\n    return \"%(prefix)screate_check_constraint(%(args)s)\" % {\n        \"prefix\": _alembic_autogenerate_prefix(autogen_context),\n        \"args\": \", \".join(args),\n    }",
+            "agent": "test_reviewer/sub1",
+            "model": "gemini-3.1-flash-lite"
+          },
+          {
+            "file": "alembic/autogenerate/compare/util.py",
+            "line_start": 268,
+            "line_end": 279,
+            "category": "other",
+            "severity": "high",
+            "confidence": 1.0,
+            "title": "Missing graceful handling for missing check constraint reflection support",
+            "explanation": "The `get_check_constraints` method in `_SQLA2InspectorConv` sets `optional=False` in `_return_from_cache`. This causes a `NotImplementedError` (or other errors if the dialect doesn't support it) when the inspector doesn't support check constraint reflection, instead of returning an empty list or handling it gracefully as the design implies. The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail because of this.",
+            "evidence": "    def get_check_constraints(\n        self, tname: str, schema: str | None\n    ) -> list[ReflectedCheckConstraint]:\n        return self._return_from_cache(\n            tname,\n            schema,\n            \"alembic_check_constraints\",\n            self.inspector.get_check_constraints,\n            apply_constraint_conv=True,\n            optional=False,\n        )",
+            "agent": "test_reviewer/sub2",
+            "model": "gemini-3.1-flash-lite"
+          },
+          {
+            "file": "alembic/ddl/impl.py",
+            "line_start": 846,
+            "line_end": 852,
+            "category": "other",
+            "severity": "medium",
+            "confidence": 1.0,
+            "title": "Default check constraint comparison ignores expression changes",
+            "explanation": "The default implementation of `compare_check_constraint` always returns `ComparisonResult.Equal()`, which means that any two check constraints with the same name will be considered equal, regardless of their actual expression. While the PR description acknowledges this as a design choice for name-based comparison, it effectively makes the autogenerate feature ignore changes to the expression of a check constraint, which might be unexpected for users who expect autogenerate to detect such changes. This is a fundamental limitation of the current implementation.",
+            "evidence": "    def compare_check_constraint(\n        self,\n        metadata_constraint: CheckConstraint,\n        reflected_constraint: CheckConstraint,\n    ) -> ComparisonResult:\n        return ComparisonResult.Equal()",
+            "agent": "test_reviewer/sub3",
+            "model": "gemini-3.1-flash-lite"
+          },
+          {
+            "file": "tests/test_autogen_check_constraints.py",
+            "line_start": 726,
+            "line_end": 729,
+            "category": "ineffective_test",
+            "severity": "low",
+            "confidence": 1.0,
+            "title": "Test expects incorrect rendered output format",
+            "explanation": "The test expects the rendered output to not include `schema=None`, but the implementation of `_add_check_constraint` in `alembic/autogenerate/render.py` (lines 453-454) explicitly adds `schema=%r` to the arguments if not in batch mode, even if the schema is None. The test fails because it expects a different format than what the code produces. The test is ineffective because it fails on a trivial formatting difference that is likely intended or at least consistent with other renderers.",
+            "evidence": "        eq_ignore_whitespace(\n            autogenerate.render_op_text(self.autogen_context, op_obj),\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )",
+            "agent": "test_reviewer/sub5",
+            "model": "gemini-3.1-flash-lite"
+          }
+        ],
+        "dropped": [
+          {
+            "draft": {
+              "file": "tests/test_autogen_check_constraints.py",
+              "line_start": 726,
+              "line_end": 736,
+              "category": "ineffective_test",
+              "severity": "medium",
+              "confidence": 1.0,
+              "title": "Test failure due to brittle assertion on rendered output",
+              "explanation": "The test `test_render_add_check_constraint` (and `test_render_add_check_constraint_string_sqltext`) fails because the rendered output includes `schema=None`, while the assertion expects it to be omitted. This indicates that the test is brittle or that the rendering logic is inconsistent with the test's expectations. Since the test fails, it is not effectively validating the intended behavior in its current state.",
+              "evidence": "    def test_render_add_check_constraint(self):\n        m1 = MetaData()\n        m2 = MetaData()\n\n        Table(\n            \"t\",\n            m1,\n            Column(\"x\", Integer),\n        )\n\n        Table(\n            \"t\",\n            m2,\n            Column(\"x\", Integer),\n            CheckConstraint(\"x > 0\", name=\"ck_x_positive\"),\n        )\n\n        diffs = self._fixture(m1, m2)\n\n        op = ops.CreateCheckConstraintOp.from_constraint(\n            m2.tables[\"t\"].constraints.pop()\n        )\n        render = autogenerate.render_op_text(\n            MigrationContext.configure(dialect=config.db.dialect), op\n        )\n        eq_ignore_whitespace(\n            render,\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )"
+            },
+            "reason": "evidence",
+            "detail": "[test_reviewer/sub4] evidence does not match any contiguous run of lines in the file"
+          },
+          {
+            "draft": {
+              "file": "tests/test_autogen_check_constraints.py",
+              "line_start": 663,
+              "line_end": 663,
+              "category": "other",
+              "severity": "medium",
+              "confidence": 1.0,
+              "title": "Reflection helper raises NotImplementedError instead of graceful skip",
+              "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because the `_InspectorConv` helper in `alembic/autogenerate/compare/util.py` does not implement `get_check_constraints` for the dialect being tested, and it raises `NotImplementedError` instead of returning an empty list or handling the missing reflection capability gracefully as the test expects.",
+              "evidence": "    conn_ck_list = _InspectorConv(inspector).get_check_constraints(\nalembic/autogenerate/compare/util.py:271: in get_check_constraints\n    return self._return_from_cache(\nalembic/autogenerate/compare/util.py:210: in _return_from_cache\n    raise NotImplementedError()"
+            },
+            "reason": "evidence",
+            "detail": "[test_reviewer/sub5] evidence does not match any contiguous run of lines in the file"
+          },
+          {
+            "draft": {
+              "file": "alembic/autogenerate/render.py",
+              "line_start": 453,
+              "line_end": 454,
+              "category": "other",
+              "severity": "medium",
+              "confidence": 1.0,
+              "title": "Unnecessary schema=None argument in generated code",
+              "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `op.schema` is `None`. This results in rendered code like `op.create_check_constraint(..., schema=None)`, which is unnecessary and causes test failures when compared against expected output that omits the schema argument.",
+              "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))",
+              "agent": "test_reviewer",
+              "model": "gemini-3.1-flash-lite",
+              "finding_id": "test_reviewer#1",
+              "duplicate_of": "test_reviewer/sub1#1"
+            },
+            "reason": "duplicate",
+            "detail": "test_reviewer#1 duplicates test_reviewer/sub1#1 (alembic/autogenerate/render.py:453-458, other, confidence 1.0), which is kept"
+          },
+          {
+            "draft": {
+              "file": "alembic/autogenerate/compare/util.py",
+              "line_start": 271,
+              "line_end": 278,
+              "category": "other",
+              "severity": "high",
+              "confidence": 1.0,
+              "title": "Missing graceful handling for missing check constraint reflection support",
+              "explanation": "The `get_check_constraints` method in `alembic/autogenerate/compare/util.py` sets `optional=False` when calling `_return_from_cache`. This causes `NotImplementedError` to be raised when the database dialect does not support check constraint reflection, instead of handling it gracefully as a missing feature. Other reflection methods (like `get_foreign_keys`) correctly allow `optional=True` (implicitly or explicitly).",
+              "evidence": "    return self._return_from_cache(\n        tname,\n        schema,\n        \"alembic_check_constraints\",\n        self.inspector.get_check_constraints,\n        apply_constraint_conv=True,\n        optional=False,\n    )",
+              "agent": "test_reviewer",
+              "model": "gemini-3.1-flash-lite",
+              "finding_id": "test_reviewer#2",
+              "duplicate_of": "test_reviewer/sub2#1"
+            },
+            "reason": "duplicate",
+            "detail": "test_reviewer#2 duplicates test_reviewer/sub2#1 (alembic/autogenerate/compare/util.py:268-279, other, confidence 1.0), which is kept"
+          }
+        ],
+        "summary": "The pull request adds autogenerate support for CHECK constraint detection. I found two main issues: an unnecessary `schema=None` argument in the generated code, which causes test failures, and a lack of graceful handling for dialects that do not support check constraint reflection, leading to `NotImplementedError` in tests.",
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "2c7eaba3d288",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": 3
+        },
+        "evaluation": true,
+        "item_id": "item_007",
+        "model_calls": 47,
+        "tool_calls": 41,
+        "tool_calls_by_tool": {
+          "list_changed_files": 6,
+          "read_diff": 11,
+          "read_file": 13,
+          "run_tests": 6,
+          "search_code": 5
+        },
+        "input_tokens": 456337,
+        "output_tokens": 3661,
+        "duration_s": 482.562,
+        "wait_s": 813.86,
+        "net_duration_s": 93.358,
+        "waits_by_reason": {
+          "rate_limiter": 798.86,
+          "retry_server": 15.0
+        },
+        "retries_by_reason": {
+          "retry_server": 1
+        },
+        "langsmith_run_id": "ba53064a-4a1a-4ebb-8f1b-3a32ea81ecbb",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "ba53064a-4a1a-4ebb-8f1b-3a32ea81ecbb",
+            "model_calls": 9,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 3,
+              "run_tests": 1,
+              "search_code": 2
+            },
+            "input_tokens": 121393,
+            "output_tokens": 716,
+            "outcome": "complete"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [
+          {
+            "status": "complete",
+            "agent": "test_reviewer/sub1",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [
+              {
+                "file": "alembic/autogenerate/render.py",
+                "line_start": 453,
+                "line_end": 458,
+                "category": "other",
+                "severity": "medium",
+                "confidence": 1.0,
+                "title": "Unnecessary schema=None argument in generated code",
+                "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `schema` is `None` (via `_ident(op.schema)` which returns `None` if `op.schema` is `None`). This causes the generated code to differ from the expected output in tests, which expect `schema` to be omitted if it is `None`. The logic should only add `schema=` if `op.schema` is not `None`.",
+                "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))\n    return \"%(prefix)screate_check_constraint(%(args)s)\" % {\n        \"prefix\": _alembic_autogenerate_prefix(autogen_context),\n        \"args\": \", \".join(args),\n    }",
+                "agent": "test_reviewer/sub1",
+                "model": "gemini-3.1-flash-lite"
+              }
+            ],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for CHECK constraint detection. I reviewed the changes in `alembic/autogenerate/render.py` and found an issue where the generated code includes an unnecessary `schema=None` argument, which causes test failures. The other test failures appear to be related to environment/reflection issues in the test suite rather than the code itself.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "293d99ac8030",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 7,
+            "tool_calls": 6,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 2,
+              "read_file": 2,
+              "run_tests": 1
+            },
+            "input_tokens": 52466,
+            "output_tokens": 517,
+            "duration_s": 233.422,
+            "wait_s": 208.937,
+            "net_duration_s": 24.485,
+            "waits_by_reason": {
+              "rate_limiter": 208.937
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "c9e7d5cb-af9e-4943-b932-b227ddbaf6e8",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "c9e7d5cb-af9e-4943-b932-b227ddbaf6e8",
+                "model_calls": 7,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 2,
+                  "read_file": 2,
+                  "run_tests": 1
+                },
+                "input_tokens": 52466,
+                "output_tokens": 517,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "test_reviewer/sub2",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [
+              {
+                "file": "alembic/autogenerate/compare/util.py",
+                "line_start": 268,
+                "line_end": 279,
+                "category": "other",
+                "severity": "high",
+                "confidence": 1.0,
+                "title": "Missing graceful handling for missing check constraint reflection support",
+                "explanation": "The `get_check_constraints` method in `_SQLA2InspectorConv` sets `optional=False` in `_return_from_cache`. This causes a `NotImplementedError` (or other errors if the dialect doesn't support it) when the inspector doesn't support check constraint reflection, instead of returning an empty list or handling it gracefully as the design implies. The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail because of this.",
+                "evidence": "    def get_check_constraints(\n        self, tname: str, schema: str | None\n    ) -> list[ReflectedCheckConstraint]:\n        return self._return_from_cache(\n            tname,\n            schema,\n            \"alembic_check_constraints\",\n            self.inspector.get_check_constraints,\n            apply_constraint_conv=True,\n            optional=False,\n        )",
+                "agent": "test_reviewer/sub2",
+                "model": "gemini-3.1-flash-lite"
+              }
+            ],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for CHECK constraints. However, the implementation in `alembic/autogenerate/compare/util.py` fails to handle cases where the database dialect does not support check constraint reflection, leading to `NotImplementedError` in tests. Additionally, some tests fail due to minor assertion mismatches in rendered output.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "43944b310033",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 7,
+            "tool_calls": 6,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 3,
+              "read_file": 1,
+              "run_tests": 1
+            },
+            "input_tokens": 52123,
+            "output_tokens": 534,
+            "duration_s": 110.453,
+            "wait_s": 81.703,
+            "net_duration_s": 28.75,
+            "waits_by_reason": {
+              "rate_limiter": 81.703
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "529e149c-3328-425b-abc3-29e715fc15e1",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "529e149c-3328-425b-abc3-29e715fc15e1",
+                "model_calls": 7,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 3,
+                  "read_file": 1,
+                  "run_tests": 1
+                },
+                "input_tokens": 52123,
+                "output_tokens": 534,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "test_reviewer/sub3",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [
+              {
+                "file": "alembic/ddl/impl.py",
+                "line_start": 846,
+                "line_end": 852,
+                "category": "other",
+                "severity": "medium",
+                "confidence": 1.0,
+                "title": "Default check constraint comparison ignores expression changes",
+                "explanation": "The default implementation of `compare_check_constraint` always returns `ComparisonResult.Equal()`, which means that any two check constraints with the same name will be considered equal, regardless of their actual expression. While the PR description acknowledges this as a design choice for name-based comparison, it effectively makes the autogenerate feature ignore changes to the expression of a check constraint, which might be unexpected for users who expect autogenerate to detect such changes. This is a fundamental limitation of the current implementation.",
+                "evidence": "    def compare_check_constraint(\n        self,\n        metadata_constraint: CheckConstraint,\n        reflected_constraint: CheckConstraint,\n    ) -> ComparisonResult:\n        return ComparisonResult.Equal()",
+                "agent": "test_reviewer/sub3",
+                "model": "gemini-3.1-flash-lite"
+              }
+            ],
+            "dropped": [],
+            "summary": "The pull request adds autogenerate support for detecting the addition and removal of named CHECK constraints. The implementation uses a name-based comparison strategy, which is a design choice to avoid complex SQL expression normalization. The tests cover various scenarios, although some tests failed in the provided environment, likely due to environment-specific issues or minor assertion mismatches.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "a350b5aaf572",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 8,
+            "tool_calls": 7,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 3,
+              "read_file": 1,
+              "run_tests": 1,
+              "search_code": 1
+            },
+            "input_tokens": 52069,
+            "output_tokens": 471,
+            "duration_s": 207.812,
+            "wait_s": 190.83,
+            "net_duration_s": 16.982,
+            "waits_by_reason": {
+              "rate_limiter": 190.83
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "bffbe376-1333-49dd-96d9-bcf52f0310d5",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "bffbe376-1333-49dd-96d9-bcf52f0310d5",
+                "model_calls": 8,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 3,
+                  "read_file": 1,
+                  "run_tests": 1,
+                  "search_code": 1
+                },
+                "input_tokens": 52069,
+                "output_tokens": 471,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "test_reviewer/sub4",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [
+              {
+                "draft": {
+                  "file": "tests/test_autogen_check_constraints.py",
+                  "line_start": 726,
+                  "line_end": 736,
+                  "category": "ineffective_test",
+                  "severity": "medium",
+                  "confidence": 1.0,
+                  "title": "Test failure due to brittle assertion on rendered output",
+                  "explanation": "The test `test_render_add_check_constraint` (and `test_render_add_check_constraint_string_sqltext`) fails because the rendered output includes `schema=None`, while the assertion expects it to be omitted. This indicates that the test is brittle or that the rendering logic is inconsistent with the test's expectations. Since the test fails, it is not effectively validating the intended behavior in its current state.",
+                  "evidence": "    def test_render_add_check_constraint(self):\n        m1 = MetaData()\n        m2 = MetaData()\n\n        Table(\n            \"t\",\n            m1,\n            Column(\"x\", Integer),\n        )\n\n        Table(\n            \"t\",\n            m2,\n            Column(\"x\", Integer),\n            CheckConstraint(\"x > 0\", name=\"ck_x_positive\"),\n        )\n\n        diffs = self._fixture(m1, m2)\n\n        op = ops.CreateCheckConstraintOp.from_constraint(\n            m2.tables[\"t\"].constraints.pop()\n        )\n        render = autogenerate.render_op_text(\n            MigrationContext.configure(dialect=config.db.dialect), op\n        )\n        eq_ignore_whitespace(\n            render,\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )"
+                },
+                "reason": "evidence",
+                "detail": "evidence does not match any contiguous run of lines in the file"
+              }
+            ],
+            "summary": "The pull request adds autogenerate support for CHECK constraint detection. I reviewed the new tests and found that several tests are failing, including those related to rendering and reflection, indicating issues with the test implementation or the new functionality. The `alembic/testing/requirements.py` file was updated correctly to support the new functionality.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "b4e469248869",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 6,
+            "tool_calls": 5,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 2,
+              "run_tests": 1
+            },
+            "input_tokens": 41068,
+            "output_tokens": 585,
+            "duration_s": 212.938,
+            "wait_s": 156.625,
+            "net_duration_s": 56.313,
+            "waits_by_reason": {
+              "rate_limiter": 156.625
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "fb04354e-f4b2-4149-92a6-64fc567a8318",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "fb04354e-f4b2-4149-92a6-64fc567a8318",
+                "model_calls": 6,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 1,
+                  "read_file": 2,
+                  "run_tests": 1
+                },
+                "input_tokens": 41068,
+                "output_tokens": 585,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "test_reviewer/sub5",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [
+              {
+                "file": "tests/test_autogen_check_constraints.py",
+                "line_start": 726,
+                "line_end": 729,
+                "category": "ineffective_test",
+                "severity": "low",
+                "confidence": 1.0,
+                "title": "Test expects incorrect rendered output format",
+                "explanation": "The test expects the rendered output to not include `schema=None`, but the implementation of `_add_check_constraint` in `alembic/autogenerate/render.py` (lines 453-454) explicitly adds `schema=%r` to the arguments if not in batch mode, even if the schema is None. The test fails because it expects a different format than what the code produces. The test is ineffective because it fails on a trivial formatting difference that is likely intended or at least consistent with other renderers.",
+                "evidence": "        eq_ignore_whitespace(\n            autogenerate.render_op_text(self.autogen_context, op_obj),\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )",
+                "agent": "test_reviewer/sub5",
+                "model": "gemini-3.1-flash-lite"
+              }
+            ],
+            "dropped": [
+              {
+                "draft": {
+                  "file": "tests/test_autogen_check_constraints.py",
+                  "line_start": 663,
+                  "line_end": 663,
+                  "category": "other",
+                  "severity": "medium",
+                  "confidence": 1.0,
+                  "title": "Reflection helper raises NotImplementedError instead of graceful skip",
+                  "explanation": "The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail with `NotImplementedError` because the `_InspectorConv` helper in `alembic/autogenerate/compare/util.py` does not implement `get_check_constraints` for the dialect being tested, and it raises `NotImplementedError` instead of returning an empty list or handling the missing reflection capability gracefully as the test expects.",
+                  "evidence": "    conn_ck_list = _InspectorConv(inspector).get_check_constraints(\nalembic/autogenerate/compare/util.py:271: in get_check_constraints\n    return self._return_from_cache(\nalembic/autogenerate/compare/util.py:210: in _return_from_cache\n    raise NotImplementedError()"
+                },
+                "reason": "evidence",
+                "detail": "evidence does not match any contiguous run of lines in the file"
+              }
+            ],
+            "summary": "The pull request adds autogenerate support for CHECK constraints. The new tests reveal issues with the rendering of check constraints (expecting a format that doesn't match the implementation) and with the reflection helper, which raises `NotImplementedError` when reflection is not supported instead of handling it gracefully.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "ce38c40dfcf3",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_007",
+            "model_calls": 10,
+            "tool_calls": 9,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 1,
+              "read_file": 4,
+              "run_tests": 1,
+              "search_code": 2
+            },
+            "input_tokens": 137218,
+            "output_tokens": 838,
+            "duration_s": 207.25,
+            "wait_s": 146.062,
+            "net_duration_s": 61.188,
+            "waits_by_reason": {
+              "rate_limiter": 131.062,
+              "retry_server": 15.0
+            },
+            "retries_by_reason": {
+              "retry_server": 1
+            },
+            "langsmith_run_id": "bfb8a0ad-dbec-4684-a80b-1246c8271f9e",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "bfb8a0ad-dbec-4684-a80b-1246c8271f9e",
+                "model_calls": 10,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 1,
+                  "read_file": 4,
+                  "run_tests": 1,
+                  "search_code": 2
+                },
+                "input_tokens": 137218,
+                "output_tokens": 838,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          }
+        ],
+        "spawn": {
+          "enabled": true,
+          "spawned": true,
+          "triggers": [
+            "files"
+          ],
+          "py_files": 12,
+          "estimated_tokens": 15844,
+          "min_py_files": 4,
+          "max_specialist_prompt_tokens": 30000,
+          "area": [
+            "alembic/__init__.py",
+            "alembic/autogenerate/compare/__init__.py",
+            "alembic/autogenerate/compare/check_constraints.py",
+            "alembic/autogenerate/compare/util.py",
+            "alembic/autogenerate/render.py",
+            "alembic/ddl/_autogen.py",
+            "alembic/ddl/impl.py",
+            "alembic/runtime/environment.py",
+            "alembic/testing/requirements.py",
+            "tests/test_autogen_check_constraints.py",
+            "tests/test_autogen_composition.py",
+            "tests/test_autogen_diffs.py"
+          ],
+          "batches": [
+            {
+              "index": 1,
+              "agent": "test_reviewer/sub1",
+              "files": [
+                "alembic/__init__.py",
+                "alembic/autogenerate/render.py"
+              ],
+              "estimated_tokens": 541,
+              "over_budget": false
+            },
+            {
+              "index": 2,
+              "agent": "test_reviewer/sub2",
+              "files": [
+                "alembic/autogenerate/compare/__init__.py",
+                "alembic/autogenerate/compare/check_constraints.py",
+                "alembic/autogenerate/compare/util.py"
+              ],
+              "estimated_tokens": 3406,
+              "over_budget": false
+            },
+            {
+              "index": 3,
+              "agent": "test_reviewer/sub3",
+              "files": [
+                "alembic/ddl/_autogen.py",
+                "alembic/ddl/impl.py",
+                "alembic/runtime/environment.py"
+              ],
+              "estimated_tokens": 1624,
+              "over_budget": false
+            },
+            {
+              "index": 4,
+              "agent": "test_reviewer/sub4",
+              "files": [
+                "alembic/testing/requirements.py"
+              ],
+              "estimated_tokens": 168,
+              "over_budget": false
+            },
+            {
+              "index": 5,
+              "agent": "test_reviewer/sub5",
+              "files": [
+                "tests/test_autogen_check_constraints.py",
+                "tests/test_autogen_composition.py",
+                "tests/test_autogen_diffs.py"
+              ],
+              "estimated_tokens": 10105,
+              "over_budget": false
+            }
+          ],
+          "file_limit_used": 3,
+          "budget_exceeded": false,
+          "token_budget_ignored": false,
+          "max_concurrency": 3,
+          "fan_out": {
+            "wall_s": 415.062,
+            "wait_s_wall": 359.501,
+            "wait_s_sum": 784.157,
+            "net_s": 55.561,
+            "timings": [
+              {
+                "agent": "test_reviewer/sub1",
+                "start_s": 0.0,
+                "end_s": 233.422,
+                "status": "complete"
+              },
+              {
+                "agent": "test_reviewer/sub2",
+                "start_s": 0.0,
+                "end_s": 110.453,
+                "status": "complete"
+              },
+              {
+                "agent": "test_reviewer/sub3",
+                "start_s": 0.0,
+                "end_s": 207.812,
+                "status": "complete"
+              },
+              {
+                "agent": "test_reviewer/sub4",
+                "start_s": 110.453,
+                "end_s": 323.391,
+                "status": "complete"
+              },
+              {
+                "agent": "test_reviewer/sub5",
+                "start_s": 207.812,
+                "end_s": 415.062,
+                "status": "complete"
+              }
+            ]
+          },
+          "cross_file": {
+            "status": "complete",
+            "duration_s": 67.5,
+            "wait_s": 29.703,
+            "net_duration_s": 37.797,
+            "model_calls": 9
+          }
+        },
+        "own_model_calls": 9,
+        "own_tool_calls": 8,
+        "own_tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 1,
+          "read_file": 3,
+          "run_tests": 1,
+          "search_code": 2
+        },
+        "own_input_tokens": 121393,
+        "own_output_tokens": 716,
+        "wait_s_sum": 813.86,
+        "wait_s_wall": 389.204
+      }
+    ],
     "spawn": null,
-    "own_model_calls": 0,
-    "own_tool_calls": 0,
-    "own_tool_calls_by_tool": {},
-    "own_input_tokens": 0,
-    "own_output_tokens": 0,
-    "wait_s_sum": 285.0,
-    "wait_s_wall": 285.0,
-    "plan": []
+    "own_model_calls": 4,
+    "own_tool_calls": 4,
+    "own_tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 1,
+      "read_diff": 1
+    },
+    "own_input_tokens": 15815,
+    "own_output_tokens": 356,
+    "wait_s_sum": 1607.16,
+    "wait_s_wall": 409.235,
+    "plan": [
+      {
+        "specialist": "bug_reviewer",
+        "called": true,
+        "reason": "The change introduces new logic for autogenerate check constraint detection, which requires a review for potential logic defects."
+      },
+      {
+        "specialist": "security_reviewer",
+        "called": false,
+        "reason": "The change does not involve SQL injection, authentication, or other security-sensitive areas."
+      },
+      {
+        "specialist": "test_reviewer",
+        "called": true,
+        "reason": "The change includes a large new test file and modifies existing tests, which requires a review to ensure the tests are effective and cover the new functionality."
+      }
+    ]
   },
   "security_mode": "local",
   "scoring": {
-    "decision": "rerun_required",
-    "cause": "RetriesExhausted"
+    "decision": "scored",
+    "cause": "partial: bug_reviewer partial"
   },
   "spawn_enabled": true,
   "run_log": [
@@ -152,6 +1589,86 @@
           "input_tokens": 0,
           "output_tokens": 0,
           "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        }
+      ]
+    },
+    {
+      "plan": [
+        {
+          "specialist": "bug_reviewer",
+          "called": true,
+          "reason": "The change introduces new logic for autogenerate check constraint detection, which requires a review for potential logic defects."
+        },
+        {
+          "specialist": "security_reviewer",
+          "called": false,
+          "reason": "The change does not involve SQL injection, authentication, or other security-sensitive areas."
+        },
+        {
+          "specialist": "test_reviewer",
+          "called": true,
+          "reason": "The change includes a large new test file and modifies existing tests, which requires a review to ensure the tests are effective and cover the new functionality."
+        }
+      ],
+      "children": {
+        "bug_reviewer": "partial",
+        "test_reviewer": "complete"
+      },
+      "wait_s_sum": 1607.16,
+      "wait_s_wall": 409.235,
+      "own_model_calls": 4,
+      "own_input_tokens": 15815,
+      "own_output_tokens": 356,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": true,
+      "spawn_max_concurrency": 3,
+      "spawned": {
+        "bug_reviewer": {
+          "spawned": true,
+          "subagents": 5,
+          "model_calls": 56
+        },
+        "test_reviewer": {
+          "spawned": true,
+          "subagents": 5,
+          "model_calls": 47
+        }
+      },
+      "started_at": "2026-11-24T21:24:36+00:00",
+      "reason": "Google 503 outage on Nov 24",
+      "status": "partial",
+      "scoring": {
+        "decision": "scored",
+        "cause": "partial: bug_reviewer partial"
+      },
+      "retries_by_reason": {
+        "retry_server": 1
+      },
+      "error": null,
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 107,
+      "tool_calls": 96,
+      "input_tokens": 1006826,
+      "output_tokens": 5976,
+      "duration_s": 505.422,
+      "wait_s": 1607.16,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "f4f0900a-c807-4427-b209-4e0424238184",
+          "model_calls": 4,
+          "tool_calls": {
+            "call_bug_reviewer": 1,
+            "call_test_reviewer": 1,
+            "list_changed_files": 1,
+            "read_diff": 1
+          },
+          "input_tokens": 15815,
+          "output_tokens": 356,
+          "outcome": "complete"
         }
       ]
     }

@@ -1,12 +1,14 @@
 {
   "result": {
-    "status": "error",
+    "status": "quota_paused",
     "agent": "orchestrator",
-    "notes": [],
-    "error_class": "RetriesExhausted",
-    "error": "evaluation model 'gemini-3.1-flash-lite' still failing with SERVER after 6 retries",
+    "notes": [
+      "test_reviewer ended the review: test_reviewer ended the review: quota_paused (QuotaPaused: evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset)"
+    ],
+    "error_class": "QuotaPaused",
+    "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
     "limit": null,
-    "reset_at": null,
+    "reset_at": "2026-11-25T08:00:00Z",
     "findings": [],
     "dropped": [],
     "summary": null,
@@ -19,49 +21,688 @@
     },
     "evaluation": true,
     "item_id": "item_008",
-    "model_calls": 0,
-    "tool_calls": 0,
-    "tool_calls_by_tool": {},
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "duration_s": 291.953,
-    "wait_s": 285.0,
-    "net_duration_s": 6.953,
+    "model_calls": 36,
+    "tool_calls": 33,
+    "tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 5,
+      "read_diff": 12,
+      "read_file": 12,
+      "search_code": 2
+    },
+    "input_tokens": 297112,
+    "output_tokens": 1373,
+    "duration_s": 175.984,
+    "wait_s": 297.69,
+    "net_duration_s": 32.874,
     "waits_by_reason": {
-      "retry_server": 285.0
+      "rate_limiter": 282.69,
+      "retry_server": 15.0
     },
     "retries_by_reason": {
-      "retry_server": 6
+      "retry_server": 1
     },
-    "langsmith_run_id": "dbca5bfd-384d-4a73-87d7-2d457c0621fb",
+    "langsmith_run_id": "128e3f3a-44e0-47e0-86fe-a62ffad19f56",
     "attempts": [
       {
         "model": "gemini-3.1-flash-lite",
-        "langsmith_run_id": "dbca5bfd-384d-4a73-87d7-2d457c0621fb",
-        "model_calls": 0,
-        "tool_calls": {},
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        "langsmith_run_id": "128e3f3a-44e0-47e0-86fe-a62ffad19f56",
+        "model_calls": 4,
+        "tool_calls": {
+          "call_bug_reviewer": 1,
+          "call_test_reviewer": 1,
+          "list_changed_files": 1,
+          "read_diff": 1
+        },
+        "input_tokens": 12460,
+        "output_tokens": 178,
+        "outcome": "SpecialistAbort: test_reviewer ended the review: quota_paused (QuotaPaused: evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset)"
       }
     ],
     "transport": null,
     "transport_detail": null,
-    "children": [],
+    "children": [
+      {
+        "status": "complete",
+        "agent": "bug_reviewer",
+        "notes": [],
+        "error_class": null,
+        "error": null,
+        "limit": null,
+        "reset_at": null,
+        "findings": [],
+        "dropped": [],
+        "summary": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "5271f6cf460a",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": null
+        },
+        "evaluation": true,
+        "item_id": "item_008",
+        "model_calls": 32,
+        "tool_calls": 29,
+        "tool_calls_by_tool": {
+          "list_changed_files": 4,
+          "read_diff": 11,
+          "read_file": 12,
+          "search_code": 2
+        },
+        "input_tokens": 284652,
+        "output_tokens": 1195,
+        "duration_s": 155.094,
+        "wait_s": 288.892,
+        "net_duration_s": 20.782,
+        "waits_by_reason": {
+          "rate_limiter": 273.892,
+          "retry_server": 15.0
+        },
+        "retries_by_reason": {
+          "retry_server": 1
+        },
+        "langsmith_run_id": "ce1e8439-72bf-4c68-8648-9acbc5c67518",
+        "attempts": [
+          {
+            "model": "gemini-3.1-flash-lite",
+            "langsmith_run_id": "ce1e8439-72bf-4c68-8648-9acbc5c67518",
+            "model_calls": 3,
+            "tool_calls": {
+              "list_changed_files": 1,
+              "read_diff": 2
+            },
+            "input_tokens": 11986,
+            "output_tokens": 65,
+            "outcome": "GoogleRateLimitError: Error calling model 'gemini-3.1-flash-lite' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 500, model: gemini-3.1-flash-lite, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\\nPlease retry in 10h24m5.069978013s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://aistudio.google.com/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'description': 'Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.', 'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-flash-lite'}, 'quotaValue': '500'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '37445s'}]}}"
+          }
+        ],
+        "transport": null,
+        "transport_detail": null,
+        "children": [
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub1",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request replaces the fragile practice of splitting foreign key target strings on dots with new, robust accessors (`_fk_target_tokens`, `_fk_target_table_key`, `_fk_target_is_named`) that leverage SQLAlchemy 2.1's internal tracking of foreign key target components. This change correctly handles foreign key targets that contain dots in their schema, table, or column names, fixing a long-standing issue in autogenerate rendering and batch migrations. The implementation includes backward compatibility for SQLAlchemy 2.0 and removes the now-unnecessary `SchemaObjects._parse_table_key` helper.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "cd9f2f12b807",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 8,
+            "tool_calls": 7,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 4,
+              "read_file": 2
+            },
+            "input_tokens": 55825,
+            "output_tokens": 319,
+            "duration_s": 122.266,
+            "wait_s": 97.406,
+            "net_duration_s": 24.86,
+            "waits_by_reason": {
+              "rate_limiter": 97.406
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "758f83f3-7015-4665-91ce-e3a91250d245",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "758f83f3-7015-4665-91ce-e3a91250d245",
+                "model_calls": 8,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 4,
+                  "read_file": 2
+                },
+                "input_tokens": 55825,
+                "output_tokens": 319,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub2",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request updates Alembic to use SQLAlchemy 2.1's `ForeignKey.target_tokens` and related accessors to correctly handle foreign key targets, especially when schema, table, or column names contain dots. It introduces compatibility helpers in `alembic/util/sqla_compat.py` and updates `alembic/operations/schemaobj.py` to use these new helpers, removing the now-unnecessary `_parse_table_key` method. The changes correctly handle the transition between SQLAlchemy versions and improve the robustness of foreign key target parsing.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "e93fb7747c9e",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 6,
+            "tool_calls": 5,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 2,
+              "read_file": 2
+            },
+            "input_tokens": 33518,
+            "output_tokens": 259,
+            "duration_s": 113.594,
+            "wait_s": 78.705,
+            "net_duration_s": 34.889,
+            "waits_by_reason": {
+              "rate_limiter": 78.705
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "196d286b-e550-48d7-8748-fc3842d35032",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "196d286b-e550-48d7-8748-fc3842d35032",
+                "model_calls": 6,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 2,
+                  "read_file": 2
+                },
+                "input_tokens": 33518,
+                "output_tokens": 259,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "complete",
+            "agent": "bug_reviewer/sub3",
+            "notes": [],
+            "error_class": null,
+            "error": null,
+            "limit": null,
+            "reset_at": null,
+            "findings": [],
+            "dropped": [],
+            "summary": "The pull request updates Alembic to use SQLAlchemy 2.1's `ForeignKey.target_tokens` and related accessors instead of splitting `ForeignKey._get_colspec()` by dots. This correctly handles foreign key targets that contain dots in their schema, table, or column names. The changes are implemented via new compatibility helpers in `alembic/util/sqla_compat.py` and applied in `alembic/operations/schemaobj.py`, `alembic/operations/batch.py`, and `alembic/autogenerate/render.py`.",
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "156a24efca62",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 15,
+            "tool_calls": 14,
+            "tool_calls_by_tool": {
+              "list_changed_files": 1,
+              "read_diff": 3,
+              "read_file": 8,
+              "search_code": 2
+            },
+            "input_tokens": 183323,
+            "output_tokens": 552,
+            "duration_s": 124.688,
+            "wait_s": 97.781,
+            "net_duration_s": 26.907,
+            "waits_by_reason": {
+              "rate_limiter": 97.781
+            },
+            "retries_by_reason": {},
+            "langsmith_run_id": "c5b344c1-a4bf-4271-959d-95ce82c6317f",
+            "attempts": [
+              {
+                "model": "gemini-3.1-flash-lite",
+                "langsmith_run_id": "c5b344c1-a4bf-4271-959d-95ce82c6317f",
+                "model_calls": 15,
+                "tool_calls": {
+                  "list_changed_files": 1,
+                  "read_diff": 3,
+                  "read_file": 8,
+                  "search_code": 2
+                },
+                "input_tokens": 183323,
+                "output_tokens": 552,
+                "outcome": "complete"
+              }
+            ],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          }
+        ],
+        "spawn": {
+          "enabled": true,
+          "spawned": true,
+          "triggers": [
+            "files"
+          ],
+          "py_files": 8,
+          "estimated_tokens": 4864,
+          "min_py_files": 4,
+          "max_specialist_prompt_tokens": 30000,
+          "area": [
+            "alembic/autogenerate/render.py",
+            "alembic/operations/batch.py",
+            "alembic/operations/schemaobj.py",
+            "alembic/testing/requirements.py",
+            "alembic/util/__init__.py",
+            "alembic/util/sqla_compat.py",
+            "tests/test_batch.py",
+            "tests/test_op.py"
+          ],
+          "batches": [
+            {
+              "index": 1,
+              "agent": "bug_reviewer/sub1",
+              "files": [
+                "alembic/autogenerate/render.py",
+                "alembic/operations/batch.py",
+                "tests/test_batch.py"
+              ],
+              "estimated_tokens": 2097,
+              "over_budget": false
+            },
+            {
+              "index": 2,
+              "agent": "bug_reviewer/sub2",
+              "files": [
+                "alembic/operations/schemaobj.py",
+                "alembic/testing/requirements.py"
+              ],
+              "estimated_tokens": 752,
+              "over_budget": false
+            },
+            {
+              "index": 3,
+              "agent": "bug_reviewer/sub3",
+              "files": [
+                "alembic/util/__init__.py",
+                "alembic/util/sqla_compat.py",
+                "tests/test_op.py"
+              ],
+              "estimated_tokens": 2016,
+              "over_budget": false
+            }
+          ],
+          "file_limit_used": 3,
+          "budget_exceeded": false,
+          "token_budget_ignored": false,
+          "max_concurrency": 3,
+          "fan_out": {
+            "wall_s": 124.704,
+            "wait_s_wall": 119.312,
+            "wait_s_sum": 273.892,
+            "net_s": 5.392,
+            "timings": [
+              {
+                "agent": "bug_reviewer/sub1",
+                "start_s": 0.0,
+                "end_s": 122.266,
+                "status": "complete"
+              },
+              {
+                "agent": "bug_reviewer/sub2",
+                "start_s": 0.0,
+                "end_s": 113.594,
+                "status": "complete"
+              },
+              {
+                "agent": "bug_reviewer/sub3",
+                "start_s": 0.016,
+                "end_s": 124.704,
+                "status": "complete"
+              }
+            ]
+          },
+          "cross_file": {
+            "status": "quota_paused",
+            "duration_s": 30.39,
+            "wait_s": 15.0,
+            "net_duration_s": 15.39,
+            "model_calls": 3
+          }
+        },
+        "own_model_calls": 3,
+        "own_tool_calls": 3,
+        "own_tool_calls_by_tool": {
+          "list_changed_files": 1,
+          "read_diff": 2
+        },
+        "own_input_tokens": 11986,
+        "own_output_tokens": 65,
+        "wait_s_sum": 288.892,
+        "wait_s_wall": 134.312
+      },
+      {
+        "status": "quota_paused",
+        "agent": "test_reviewer",
+        "notes": [
+          "test_reviewer/sub1 ended the review: test_reviewer/sub1 ended the review: quota_paused (QuotaPaused: evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset)"
+        ],
+        "error_class": "QuotaPaused",
+        "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
+        "limit": null,
+        "reset_at": "2026-11-25T08:00:00Z",
+        "findings": [],
+        "dropped": [],
+        "summary": null,
+        "model_id": "gemini-3.1-flash-lite",
+        "prompt_version": "2c7eaba3d288",
+        "limits": {
+          "max_model_calls": 20,
+          "max_tool_calls": 30,
+          "max_run_tests_calls": 3
+        },
+        "evaluation": true,
+        "item_id": "item_008",
+        "model_calls": 0,
+        "tool_calls": 0,
+        "tool_calls_by_tool": {},
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "duration_s": 0.016,
+        "wait_s": 0.0,
+        "net_duration_s": 0.016,
+        "waits_by_reason": {},
+        "retries_by_reason": {},
+        "langsmith_run_id": null,
+        "attempts": [],
+        "transport": null,
+        "transport_detail": null,
+        "children": [
+          {
+            "status": "quota_paused",
+            "agent": "test_reviewer/sub1",
+            "notes": [],
+            "error_class": "QuotaPaused",
+            "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
+            "limit": null,
+            "reset_at": "2026-11-25T08:00:00Z",
+            "findings": [],
+            "dropped": [],
+            "summary": null,
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "656f175b5a87",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 0,
+            "tool_calls": 0,
+            "tool_calls_by_tool": {},
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_s": 0.0,
+            "wait_s": 0.0,
+            "net_duration_s": 0.0,
+            "waits_by_reason": {},
+            "retries_by_reason": {},
+            "langsmith_run_id": null,
+            "attempts": [],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "quota_paused",
+            "agent": "test_reviewer/sub2",
+            "notes": [],
+            "error_class": "QuotaPaused",
+            "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
+            "limit": null,
+            "reset_at": "2026-11-25T08:00:00Z",
+            "findings": [],
+            "dropped": [],
+            "summary": null,
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "9d2315391cca",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 0,
+            "tool_calls": 0,
+            "tool_calls_by_tool": {},
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_s": 0.0,
+            "wait_s": 0.0,
+            "net_duration_s": 0.0,
+            "waits_by_reason": {},
+            "retries_by_reason": {},
+            "langsmith_run_id": null,
+            "attempts": [],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          },
+          {
+            "status": "quota_paused",
+            "agent": "test_reviewer/sub3",
+            "notes": [],
+            "error_class": "QuotaPaused",
+            "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
+            "limit": null,
+            "reset_at": "2026-11-25T08:00:00Z",
+            "findings": [],
+            "dropped": [],
+            "summary": null,
+            "model_id": "gemini-3.1-flash-lite",
+            "prompt_version": "372452a1061f",
+            "limits": {
+              "max_model_calls": 15,
+              "max_tool_calls": 20,
+              "max_run_tests_calls": 1
+            },
+            "evaluation": true,
+            "item_id": "item_008",
+            "model_calls": 0,
+            "tool_calls": 0,
+            "tool_calls_by_tool": {},
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_s": 0.0,
+            "wait_s": 0.0,
+            "net_duration_s": 0.0,
+            "waits_by_reason": {},
+            "retries_by_reason": {},
+            "langsmith_run_id": null,
+            "attempts": [],
+            "transport": null,
+            "transport_detail": null,
+            "children": [],
+            "spawn": null,
+            "own_model_calls": 0,
+            "own_tool_calls": 0,
+            "own_tool_calls_by_tool": {},
+            "own_input_tokens": 0,
+            "own_output_tokens": 0,
+            "wait_s_sum": 0.0,
+            "wait_s_wall": 0.0
+          }
+        ],
+        "spawn": {
+          "enabled": true,
+          "spawned": true,
+          "triggers": [
+            "files"
+          ],
+          "py_files": 8,
+          "estimated_tokens": 4864,
+          "min_py_files": 4,
+          "max_specialist_prompt_tokens": 30000,
+          "area": [
+            "alembic/autogenerate/render.py",
+            "alembic/operations/batch.py",
+            "alembic/operations/schemaobj.py",
+            "alembic/testing/requirements.py",
+            "alembic/util/__init__.py",
+            "alembic/util/sqla_compat.py",
+            "tests/test_batch.py",
+            "tests/test_op.py"
+          ],
+          "batches": [
+            {
+              "index": 1,
+              "agent": "test_reviewer/sub1",
+              "files": [
+                "alembic/autogenerate/render.py",
+                "alembic/operations/batch.py",
+                "tests/test_batch.py"
+              ],
+              "estimated_tokens": 2097,
+              "over_budget": false
+            },
+            {
+              "index": 2,
+              "agent": "test_reviewer/sub2",
+              "files": [
+                "alembic/operations/schemaobj.py",
+                "alembic/testing/requirements.py"
+              ],
+              "estimated_tokens": 752,
+              "over_budget": false
+            },
+            {
+              "index": 3,
+              "agent": "test_reviewer/sub3",
+              "files": [
+                "alembic/util/__init__.py",
+                "alembic/util/sqla_compat.py",
+                "tests/test_op.py"
+              ],
+              "estimated_tokens": 2016,
+              "over_budget": false
+            }
+          ],
+          "file_limit_used": 3,
+          "budget_exceeded": false,
+          "token_budget_ignored": false,
+          "max_concurrency": 3,
+          "fan_out": {
+            "wall_s": 0.016,
+            "wait_s_wall": 0.0,
+            "wait_s_sum": 0.0,
+            "net_s": 0.016,
+            "timings": [
+              {
+                "agent": "test_reviewer/sub1",
+                "start_s": 0.0,
+                "end_s": 0.0,
+                "status": "quota_paused"
+              },
+              {
+                "agent": "test_reviewer/sub2",
+                "start_s": 0.0,
+                "end_s": 0.0,
+                "status": "quota_paused"
+              },
+              {
+                "agent": "test_reviewer/sub3",
+                "start_s": 0.0,
+                "end_s": 0.0,
+                "status": "quota_paused"
+              }
+            ]
+          },
+          "cross_file": null
+        },
+        "own_model_calls": 0,
+        "own_tool_calls": 0,
+        "own_tool_calls_by_tool": {},
+        "own_input_tokens": 0,
+        "own_output_tokens": 0,
+        "wait_s_sum": 0.0,
+        "wait_s_wall": 0.0
+      }
+    ],
     "spawn": null,
-    "own_model_calls": 0,
-    "own_tool_calls": 0,
-    "own_tool_calls_by_tool": {},
-    "own_input_tokens": 0,
-    "own_output_tokens": 0,
-    "wait_s_sum": 285.0,
-    "wait_s_wall": 285.0,
+    "own_model_calls": 4,
+    "own_tool_calls": 4,
+    "own_tool_calls_by_tool": {
+      "call_bug_reviewer": 1,
+      "call_test_reviewer": 1,
+      "list_changed_files": 1,
+      "read_diff": 1
+    },
+    "own_input_tokens": 12460,
+    "own_output_tokens": 178,
+    "wait_s_sum": 297.69,
+    "wait_s_wall": 143.11,
     "plan": []
   },
   "security_mode": "local",
   "scoring": {
     "decision": "rerun_required",
-    "cause": "RetriesExhausted"
+    "cause": "quota_paused"
   },
   "spawn_enabled": true,
   "run_log": [
@@ -152,6 +793,70 @@
           "input_tokens": 0,
           "output_tokens": 0,
           "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        }
+      ]
+    },
+    {
+      "plan": [],
+      "children": {
+        "bug_reviewer": "complete",
+        "test_reviewer": "quota_paused"
+      },
+      "wait_s_sum": 297.69,
+      "wait_s_wall": 143.11,
+      "own_model_calls": 4,
+      "own_input_tokens": 12460,
+      "own_output_tokens": 178,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": true,
+      "spawn_max_concurrency": 3,
+      "spawned": {
+        "bug_reviewer": {
+          "spawned": true,
+          "subagents": 3,
+          "model_calls": 32
+        },
+        "test_reviewer": {
+          "spawned": true,
+          "subagents": 3,
+          "model_calls": 0
+        }
+      },
+      "started_at": "2026-11-24T21:33:02+00:00",
+      "reason": "Google 503 outage on Nov 24",
+      "status": "quota_paused",
+      "scoring": {
+        "decision": "rerun_required",
+        "cause": "quota_paused"
+      },
+      "retries_by_reason": {
+        "retry_server": 1
+      },
+      "error": "evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset",
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 36,
+      "tool_calls": 33,
+      "input_tokens": 297112,
+      "output_tokens": 1373,
+      "duration_s": 175.984,
+      "wait_s": 297.69,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "128e3f3a-44e0-47e0-86fe-a62ffad19f56",
+          "model_calls": 4,
+          "tool_calls": {
+            "call_bug_reviewer": 1,
+            "call_test_reviewer": 1,
+            "list_changed_files": 1,
+            "read_diff": 1
+          },
+          "input_tokens": 12460,
+          "output_tokens": 178,
+          "outcome": "SpecialistAbort: test_reviewer ended the review: quota_paused (QuotaPaused: evaluation model 'gemini-3.1-flash-lite' daily quota exhausted until 2026-11-25T08:00:00+00:00; save progress and resume after the reset)"
         }
       ]
     }

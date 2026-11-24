@@ -223,3 +223,14 @@ nothing under `src/`, `config/` or `eval/` changed, and `eval.run` does not impo
 Evidence: `git diff cb12ec8 -- src config eval/score.py eval/ground_truth.py eval/equivalences.yaml
 eval/dataset eval/plants` prints nothing, and `test_build_graph_without_approval_is_unchanged`
 checks that `reviewer.graph.build_graph()` has the same nodes, edges and final state keys.
+
+### `subagents` re-runs, day 4 (2026-11-25)
+
+Reason recorded for every re-run: "Google 503 outage on Nov 24". The model was available again.
+Two stage 6 acceptance reviews (decision 0016) used part of the day's calls first. Re-run of the 10
+`rerun_required` items in order: item_006 `scored` (partial: test_reviewer partial), item_007
+`scored` (partial: bug_reviewer partial), item_008 `quota_paused` (gemini-3.1-flash-lite daily quota
+exhausted; resets 2026-11-25 08:00 UTC / 13:00 PKT). Calls recorded today: 247 (budget 430). No 503
+errors. The run stopped cleanly; nothing was tuned. `subagents` is now 4 scored, 7 reused, 9
+`rerun_required`; `verifier` and `judge` have not started. Resume with `eval.run --config subagents
+--items <the rerun_required items> --force --reason "Google 503 outage on Nov 24"`.

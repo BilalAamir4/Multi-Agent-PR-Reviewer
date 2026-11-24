@@ -1,0 +1,58 @@
+{
+  "item_id": "item_007",
+  "config": "subagents",
+  "findings": [
+    {
+      "file": "alembic/autogenerate/render.py",
+      "line_start": 453,
+      "line_end": 458,
+      "category": "other",
+      "severity": "medium",
+      "confidence": 1.0,
+      "title": "Unnecessary schema=None argument in generated code",
+      "explanation": "The `_add_check_constraint` function unconditionally adds `schema=None` to the generated `create_check_constraint` call when `schema` is `None` (via `_ident(op.schema)` which returns `None` if `op.schema` is `None`). This causes the generated code to differ from the expected output in tests, which expect `schema` to be omitted if it is `None`. The logic should only add `schema=` if `op.schema` is not `None`.",
+      "evidence": "    if not autogen_context._has_batch:\n        args.append(\"schema=%r\" % _ident(op.schema))\n    return \"%(prefix)screate_check_constraint(%(args)s)\" % {\n        \"prefix\": _alembic_autogenerate_prefix(autogen_context),\n        \"args\": \", \".join(args),\n    }",
+      "agent": "test_reviewer/sub1",
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "file": "alembic/autogenerate/compare/util.py",
+      "line_start": 268,
+      "line_end": 279,
+      "category": "other",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "Missing graceful handling for missing check constraint reflection support",
+      "explanation": "The `get_check_constraints` method in `_SQLA2InspectorConv` sets `optional=False` in `_return_from_cache`. This causes a `NotImplementedError` (or other errors if the dialect doesn't support it) when the inspector doesn't support check constraint reflection, instead of returning an empty list or handling it gracefully as the design implies. The tests `test_no_reflection_graceful_skip_add` and `test_no_reflection_graceful_skip_remove` fail because of this.",
+      "evidence": "    def get_check_constraints(\n        self, tname: str, schema: str | None\n    ) -> list[ReflectedCheckConstraint]:\n        return self._return_from_cache(\n            tname,\n            schema,\n            \"alembic_check_constraints\",\n            self.inspector.get_check_constraints,\n            apply_constraint_conv=True,\n            optional=False,\n        )",
+      "agent": "test_reviewer/sub2",
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "file": "alembic/ddl/impl.py",
+      "line_start": 846,
+      "line_end": 852,
+      "category": "other",
+      "severity": "medium",
+      "confidence": 1.0,
+      "title": "Default check constraint comparison ignores expression changes",
+      "explanation": "The default implementation of `compare_check_constraint` always returns `ComparisonResult.Equal()`, which means that any two check constraints with the same name will be considered equal, regardless of their actual expression. While the PR description acknowledges this as a design choice for name-based comparison, it effectively makes the autogenerate feature ignore changes to the expression of a check constraint, which might be unexpected for users who expect autogenerate to detect such changes. This is a fundamental limitation of the current implementation.",
+      "evidence": "    def compare_check_constraint(\n        self,\n        metadata_constraint: CheckConstraint,\n        reflected_constraint: CheckConstraint,\n    ) -> ComparisonResult:\n        return ComparisonResult.Equal()",
+      "agent": "test_reviewer/sub3",
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "file": "tests/test_autogen_check_constraints.py",
+      "line_start": 726,
+      "line_end": 729,
+      "category": "ineffective_test",
+      "severity": "low",
+      "confidence": 1.0,
+      "title": "Test expects incorrect rendered output format",
+      "explanation": "The test expects the rendered output to not include `schema=None`, but the implementation of `_add_check_constraint` in `alembic/autogenerate/render.py` (lines 453-454) explicitly adds `schema=%r` to the arguments if not in batch mode, even if the schema is None. The test fails because it expects a different format than what the code produces. The test is ineffective because it fails on a trivial formatting difference that is likely intended or at least consistent with other renderers.",
+      "evidence": "        eq_ignore_whitespace(\n            autogenerate.render_op_text(self.autogen_context, op_obj),\n            \"op.create_check_constraint('ck_x_positive', 't', 'x > 0')\",\n        )",
+      "agent": "test_reviewer/sub5",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}
