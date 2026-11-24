@@ -1,36 +1,83 @@
 # Multi-Agent-PR-Reviewer
 
-A LangChain/LangGraph system that reviews Python pull requests with several agents, and an
-evaluation of whether that finds more planted bugs than a single agent.
+A LangChain/LangGraph system that reviews Python pull requests with several cooperating agents,
+plus an evaluation of whether that finds more planted bugs than a single agent.
 
-Status: stage 1 (single-agent baseline) done. Python repositories only.
+## Architecture
 
-## Running the tests
+```mermaid
+flowchart TD
+    PR["GitHub pull request"] --> ORCH["Orchestrator<br/>reads the diff, plans the review"]
+    ORCH -->|picks which specialists to call| SPEC
+    subgraph SPEC["Called: three standing specialists, each wrapped as a tool"]
+        BUG["Bug reviewer<br/>logic errors and edge cases"]
+        SEC["Security reviewer<br/>own service, reached over A2A"]
+        TST["Test reviewer<br/>runs the tests in a sandbox"]
+    end
+    BUG -->|only when its share is large| BSUB["Spawned: bug sub-agents<br/>2 to 3 files each"]
+    SEC -->|only when its share is large| SSUB["Spawned: security sub-agents<br/>inside the A2A service"]
+    TST -->|only when its share is large| TSUB["Spawned: test sub-agents"]
+    BSUB -->|report back| BUG
+    SSUB -->|report back| SEC
+    TSUB -->|report back| TST
+    SPEC -->|all findings, merged| VER["Verifier<br/>removes weak findings"]
+    VER --> HUM["Human approval<br/>approve, edit or reject"]
+    HUM --> POST["Post review comments<br/>on the pull request"]
+    classDef decision stroke-width:3px
+    class ORCH,HUM decision
+```
+
+The last two boxes (human approval and posting comments) are not built yet.
+
+## What is built
+
+- An orchestrator that plans the review and calls three specialists (bug, security, test) as tools.
+- The security specialist as an A2A service (a separate process, local transport by default in the
+  evaluation).
+- Specialists that spawn sub-agents with LangGraph `Send` when their share of the diff is large.
+- A verifier and an orchestrator-as-judge that keep or drop findings (they never edit them).
+- A Docker sandbox: PR code only ever runs `pytest` inside a throwaway container with no network.
+- A quota-aware model router with per-call retries, and LangSmith tracing.
+- A 20-item dataset of real commits with planted bugs (14 planted items with 28 bugs, 6 clean), a
+  strict scorer, and a blind-labelling protocol for judging unmatched findings.
+
+## Not built yet
+
+- Human approval and the GitHub webhook service (stage 6).
+- Hardening (stage 7).
+
+## Running it
 
 ```powershell
 uv sync
-uv run pytest -q
-```
-
-## Reviewing a pull request
-
-```powershell
+uv run pytest -q -m "not integration"
 uv run reviewer review --workspace PATH --diff PATH [--title TEXT] [--body-file PATH] [--out PATH]
-uv run reviewer review --item item_001 [--out PATH] [--eval-mode]
-uv run python -m eval.run --config single     # review and score every dataset item
+uv run reviewer review --agent orchestrator --workspace PATH --diff PATH [--sandbox-repo NAME]
+uv run reviewer review --agent graph --judge verifier --workspace PATH --diff PATH
+uv run python -m eval.run --config single      # review and score every dataset item
+uv run python -m eval.plan_runs                # status of the evaluation runs
+uv run python -m eval.report                   # eval/results/REPORT.md and the table below
 ```
 
-## Results
+It needs Python 3.12, `uv`, Docker Desktop and the keys in `.env` (see `.env.example`). The design is
+in `docs/plan.md`, the evaluation protocol in `docs/decisions/0015-evaluation-protocol.md`.
 
-Every role on Gemini 3.1 Flash Lite (D4), one run per configuration. Recall and precision use
-the strict matching rule, with location-only beside recall. Median time has rate-limit waiting
-removed, with the waiting beside it (D7). Cost is the D5 price estimate.
+## Results (interim)
+
+Every role uses Gemini 3.1 Flash Lite (free tier), one run per configuration, 20 items with 28
+planted bugs. Recall and precision use the strict matching rule, with location-only recall beside
+it. Adjusted precision stays empty until the blind labelling is done. Median time has rate-limit
+waiting removed, with the waiting beside it. Cost is the price estimate; nothing was billed.
+Only the first two rows are complete. The other rows were paused by a Gemini API outage on Nov 24
+(503 high demand) and will resume with the same model. With 28 bugs and one run each, small
+differences are not conclusive.
 
 | Configuration | Recall | Precision (strict / adjusted) | False alarms per clean PR | Cost per review | Median time |
 | --- | --- | --- | --- | --- | --- |
-| One agent (baseline, 5 items; the full 20-item numbers come in stage 5) | 0.17 (location-only 0.33) | 0.50 / - | 0.00 | $0.027 (107K input, 412 output tokens) | 15.1 s (+37.5 s waiting) |
-| Orchestrator calling specialists |  |  |  |  |  |
-| Plus spawned workers on large diffs |  |  |  |  |  |
-| Plus verifier |  |  |  |  |  |
+| One agent | 0.07 (location-only 0.14) | 0.50 / - | 0.00 | $0.0194 (75K input, 415 output tokens) | 14.3 s (+35.3 s waiting) |
+| Orchestrator calling specialists | 0.36 (location-only 0.43) | 0.67 / - | 0.17 | $0.0429 (164K input, 1249 output tokens) | 45.6 s (+76.5 s waiting) |
+| Plus spawned sub-agents on large diffs | in progress: paused by a Gemini API outage on Nov 24 (503 high demand); same model, will resume | | | | |
+| Plus verifier | in progress: paused by a Gemini API outage on Nov 24 (503 high demand); same model, will resume | | | | |
+| Plus orchestrator as judge (optional) | in progress: paused by a Gemini API outage on Nov 24 (503 high demand); same model, will resume | | | | |
 
-Details: `eval/results/single/summary.md` and `docs/decisions/0007-single-agent-baseline.md`.
+Details: `eval/results/REPORT.md` (cost, time, per-size and per-kind tables).

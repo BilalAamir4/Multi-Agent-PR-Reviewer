@@ -214,7 +214,7 @@ def test_readme_table_is_replaced_in_place(world):
         "| One agent | 0.50 (location-only 0.50) | 0.50 / - | 1.00 | $0.0004 (1K input, 100 output tokens) | 4.0 s (+1.5 s waiting) |"  # noqa: E501
         in new
     )
-    assert "| Plus orchestrator as judge (optional) |  |  |  |  |  |" in new
+    assert f"| Plus orchestrator as judge (optional) | {rp.IN_PROGRESS} | | | | |" in new
 
 
 def test_main_writes_report_and_readme(world, tmp_path, capsys):

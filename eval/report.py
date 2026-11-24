@@ -49,6 +49,10 @@ KINDS = (
     "off_by_one", "missing_none_check", "wrong_comparison", "unhandled_exception",
     "sql_injection", "hardcoded_secret", "ineffective_test",
 )  # fmt: skip
+IN_PROGRESS = (
+    "in progress: paused by a Gemini API outage on Nov 24 (503 high demand); "
+    "same model, will resume"
+)
 STAGE1_SINGLE = ("item_001", "item_002", "item_003", "item_004", "item_005")  # decision 0015
 SUB_AGENT = re.compile(r"/sub\d+$")  # Finding.agent of a sub-agent, e.g. bug_reviewer/sub2
 
@@ -279,6 +283,7 @@ def build_report(
         f"Configurations with complete results: {', '.join(c.name for c in configs) or 'none'}. "
         + (f"Not complete (no row): {', '.join(missing)}." if missing else ""),
         "",
+        *([f"Rows `{'`, `'.join(missing)}`: {IN_PROGRESS}.", ""] if missing else []),
         "## Main table (all 20 items)",
         "",
         *table(MAIN_HEADER, [metric_row(cd, dataset, "all") for cd in configs]),
@@ -428,7 +433,7 @@ def readme_rows(configs: list[ConfigData], dataset: Path) -> list[str]:
     for name in CONFIG_ORDER:
         cd = by_name.get(name)
         if cd is None:
-            rows.append(f"| {TITLES[name]} |  |  |  |  |  |")
+            rows.append(f"| {TITLES[name]} | {IN_PROGRESS} | | | | |")
             continue
         s = cd.score["aggregates"]["strict"]["all"]
         loc = cd.score["aggregates"]["location_only"]["all"]
