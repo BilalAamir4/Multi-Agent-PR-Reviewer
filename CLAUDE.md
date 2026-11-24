@@ -32,6 +32,8 @@ several agents, plus an evaluation of whether that finds more planted bugs than 
   `docs/decisions/0013-review-graph-verifier-judge.md`.
 - Stage 5 evaluation protocol (run order, D6 reuse, frozen list, blind labelling, metrics, call budget):
   `docs/decisions/0015-evaluation-protocol.md`.
+- Human approval, checkpointed resume, GitHub posting (stage 6; code in `approval/`, outside the frozen `src/`):
+  `docs/decisions/0016-human-approval-and-posting.md`; test repository steps: `docs/stage6-test-repo.md`.
 - Finding categories: `docs/categories.md`. All agent prompts must take their category
   definitions from this file.
 
@@ -88,6 +90,16 @@ uv run python -m eval.run --config verifier ...       # row 4: the verifier on t
 uv run python -m eval.run --config judge ...          # row 4b (optional): the orchestrator as judge on the same saved findings
 uv run python scripts/check_judges.py [--judge verifier|orchestrator|both]   # dev only: judge_mix.json on dev_pr (spends model calls)
 ```
+
+```powershell
+uv run python -m approval review-pr --repo OWNER/NAME --pr N [--judge verifier|orchestrator|none] `
+    [--security-mode local|remote] [--sandbox-repo NAME] [--eval-mode] [--key-suffix S]   # to the interrupt
+uv run python -m approval approve --key KEY [--dry-run]   # decide per finding, then post
+uv run python -m approval resume --key KEY                # continue after a crash
+uv run python -m approval status --key KEY
+```
+
+`.reviewer/` (checkpoints, decisions, workspaces) is gitignored; `GITHUB_TOKEN` comes only from `.env`.
 
 Stage 5 run order: `single` (already done) -> `orchestrator` -> `subagents` -> `verifier` -> optionally
 `judge`. The last two read `eval/results/subagents/` and run only the judge step on those findings.
@@ -232,5 +244,5 @@ run the model checks in loops.
 | Dataset E1 (item_006 to item_013) | done (decision 0014): 8 items, 12 checks pass for all 13 items |
 | Dataset E2 (item_014 to item_020) | done (decision 0014): 7 items, 12 checks pass for all 20 items; **dataset complete: 20 items** |
 | 5 Evaluation | not started |
-| 6 Approval and service | not started |
+| 6 Approval and posting (CLI; webhook and Postgres cut) | code and unit tests done (decision 0016, `approval/`); **live acceptance run pending** (model 503 on 2026-11-24); not done until it passes |
 | 7 Hardening | not started |

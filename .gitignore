@@ -13,3 +13,4 @@ eval/repos/
 eval/workspaces/
 a2a_security/service.pid
 a2a_security/service.log
+.reviewer/

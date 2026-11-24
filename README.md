@@ -27,7 +27,7 @@ flowchart TD
     class ORCH,HUM decision
 ```
 
-The last two boxes (human approval and posting comments) are not built yet.
+Human approval and posting are built as a CLI (`approval/`, decision 0016); the live run on a real PR is still pending.
 
 ## What is built
 
@@ -40,10 +40,12 @@ The last two boxes (human approval and posting comments) are not built yet.
 - A quota-aware model router with per-call retries, and LangSmith tracing.
 - A 20-item dataset of real commits with planted bugs (14 planted items with 28 bugs, 6 clean), a
   strict scorer, and a blind-labelling protocol for judging unmatched findings.
+- Human approval (LangGraph `interrupt`), SQLite-checkpointed resume and idempotent GitHub posting of
+  the approved findings as review comments (`python -m approval`, stage 6).
 
 ## Not built yet
 
-- Human approval and the GitHub webhook service (stage 6).
+- The GitHub webhook service (cut by choice; the CLI posts instead).
 - Hardening (stage 7).
 
 ## Running it
@@ -54,6 +56,7 @@ uv run pytest -q -m "not integration"
 uv run reviewer review --workspace PATH --diff PATH [--title TEXT] [--body-file PATH] [--out PATH]
 uv run reviewer review --agent orchestrator --workspace PATH --diff PATH [--sandbox-repo NAME]
 uv run reviewer review --agent graph --judge verifier --workspace PATH --diff PATH
+uv run python -m approval review-pr --repo OWNER/NAME --pr N   # then approve, status, resume
 uv run python -m eval.run --config single      # review and score every dataset item
 uv run python -m eval.plan_runs                # status of the evaluation runs
 uv run python -m eval.report                   # eval/results/REPORT.md and the table below

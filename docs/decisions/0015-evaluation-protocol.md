@@ -214,3 +214,12 @@ Strict recall 0.36 (10 tp / 28 bugs), strict precision 0.67 (5 fp), location-onl
 false alarms per clean PR 0.17. Mean tokens 164298 in / 1249 out, about $0.043 per review (D5
 estimate), median net time 45.6 s, median wait 76.5 s (`wait_s_wall`). Full table:
 `eval/results/orchestrator/summary.md`.
+
+### Stage 6 code added during the evaluation (2026-11-24)
+
+Human approval, checkpointed resume and GitHub posting (decision 0016) were written while stage 5
+was running. They live in the new top-level package `approval/` and in `tests/test_approval.py`;
+nothing under `src/`, `config/` or `eval/` changed, and `eval.run` does not import `approval`.
+Evidence: `git diff cb12ec8 -- src config eval/score.py eval/ground_truth.py eval/equivalences.yaml
+eval/dataset eval/plants` prints nothing, and `test_build_graph_without_approval_is_unchanged`
+checks that `reviewer.graph.build_graph()` has the same nodes, edges and final state keys.
