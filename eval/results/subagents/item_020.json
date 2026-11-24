@@ -1,0 +1,19 @@
+{
+  "item_id": "item_020",
+  "config": "subagents",
+  "findings": [
+    {
+      "file": "src/click/decorators.py",
+      "line_start": 511,
+      "line_end": 513,
+      "category": "unhandled_exception",
+      "severity": "high",
+      "confidence": 1.0,
+      "title": "Unhandled KeyError when package_name is not in packages_distributions",
+      "explanation": "The code accesses `importlib.metadata.packages_distributions()` with `package_name` as a key without checking if the key exists. If `package_name` is not in the dictionary, it raises a `KeyError`, which is not caught, causing the application to crash instead of falling through to the intended error handling logic.",
+      "evidence": "                distributions = importlib.metadata.packages_distributions()[\n                    package_name\n                ]",
+      "agent": "test_reviewer",
+      "model": "gemini-3.1-flash-lite"
+    }
+  ]
+}

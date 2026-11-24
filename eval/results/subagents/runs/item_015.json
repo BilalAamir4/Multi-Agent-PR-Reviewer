@@ -1,0 +1,114 @@
+{
+  "result": {
+    "status": "error",
+    "agent": "orchestrator",
+    "notes": [],
+    "error_class": "RetriesExhausted",
+    "error": "evaluation model 'gemini-3.1-flash-lite' still failing with SERVER after 6 retries",
+    "limit": null,
+    "reset_at": null,
+    "findings": [],
+    "dropped": [],
+    "summary": null,
+    "model_id": "gemini-3.1-flash-lite",
+    "prompt_version": "4eda79561a8c",
+    "limits": {
+      "max_model_calls": 8,
+      "max_tool_calls": 12,
+      "max_run_tests_calls": null
+    },
+    "evaluation": true,
+    "item_id": "item_015",
+    "model_calls": 0,
+    "tool_calls": 0,
+    "tool_calls_by_tool": {},
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "duration_s": 291.016,
+    "wait_s": 285.0,
+    "net_duration_s": 6.016,
+    "waits_by_reason": {
+      "retry_server": 285.0
+    },
+    "retries_by_reason": {
+      "retry_server": 6
+    },
+    "langsmith_run_id": "26a161cc-5efd-4ecf-b48f-1711f8821268",
+    "attempts": [
+      {
+        "model": "gemini-3.1-flash-lite",
+        "langsmith_run_id": "26a161cc-5efd-4ecf-b48f-1711f8821268",
+        "model_calls": 0,
+        "tool_calls": {},
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+      }
+    ],
+    "transport": null,
+    "transport_detail": null,
+    "children": [],
+    "spawn": null,
+    "own_model_calls": 0,
+    "own_tool_calls": 0,
+    "own_tool_calls_by_tool": {},
+    "own_input_tokens": 0,
+    "own_output_tokens": 0,
+    "wait_s_sum": 285.0,
+    "wait_s_wall": 285.0,
+    "plan": []
+  },
+  "security_mode": "local",
+  "scoring": {
+    "decision": "rerun_required",
+    "cause": "RetriesExhausted"
+  },
+  "spawn_enabled": true,
+  "run_log": [
+    {
+      "plan": [],
+      "children": {},
+      "wait_s_sum": 285.0,
+      "wait_s_wall": 285.0,
+      "own_model_calls": 0,
+      "own_input_tokens": 0,
+      "own_output_tokens": 0,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": true,
+      "spawn_max_concurrency": 3,
+      "spawned": {},
+      "started_at": "2026-11-24T13:36:42+00:00",
+      "reason": "first run",
+      "status": "error",
+      "scoring": {
+        "decision": "rerun_required",
+        "cause": "RetriesExhausted"
+      },
+      "retries_by_reason": {
+        "retry_server": 6
+      },
+      "error": "evaluation model 'gemini-3.1-flash-lite' still failing with SERVER after 6 retries",
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 0,
+      "tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "duration_s": 291.016,
+      "wait_s": 285.0,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "26a161cc-5efd-4ecf-b48f-1711f8821268",
+          "model_calls": 0,
+          "tool_calls": {},
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        }
+      ]
+    }
+  ]
+}
