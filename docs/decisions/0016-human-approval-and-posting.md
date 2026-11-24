@@ -1,7 +1,7 @@
 # 0016: Human approval, checkpointed resume and GitHub posting (stage 6)
 
-Date: 2026-11-24 · Status: accepted (code and unit tests done; live acceptance run **pending**,
-see "Task 6 results") · Implements: plan § stage 6. Replaces no locked decision.
+Date: 2026-11-24 (live acceptance 2026-11-25) · Status: accepted (code, unit tests and live
+acceptance run done, see "Task 6 results") · Implements: plan § stage 6. Replaces no locked decision.
 
 ## Where the code lives
 
@@ -81,9 +81,32 @@ and `approve` stops until all are decided.
 
 ## Task 6 results
 
-**Pending (model 503).** The probe (`scripts/check_finding.py`, 1 model call) returned
-`503 UNAVAILABLE` on 2026-11-24. Done without model calls: test repository
-`BilalAamir4/mapr-playground`, PR https://github.com/BilalAamir4/mapr-playground/pull/1 (head
-`9623bcd`), and a read-only check of the real client (`get_pr`; `get_pr_diff` identical to the
-fixture's `pr.diff`; `list_reviews` empty). Not done: the live review, the crash/resume demo, the
-approve/reject run and the double-post check.
+The 2026-11-24 attempt hit `503 UNAVAILABLE`; the acceptance run was done on 2026-11-25 (probe
+`scripts/check_finding.py` passed first). Test repository `BilalAamir4/mapr-playground`, PR
+https://github.com/BilalAamir4/mapr-playground/pull/1 (head `9623bcd`).
+Command: `review-pr --judge verifier --security-mode local --sandbox-repo dev_fixture --eval-mode`.
+
+- **Review to the interrupt.** Key `BilalAamir4/mapr-playground#1@9623bcde6d1fa6d5618bc1e09e617081adfb47dd`.
+  Review status `partial` (two verifier checks ended `limit_reached`; those findings were kept as
+  uncertain, per the 0013 policy). 5 findings waited for approval.
+- **Crash and resume.** Same command with `--key-suffix demo`. `status` showed `last completed: review,
+  next node: judge`; the process was killed while the judge ran; `resume` printed
+  `resuming after review; running judge` and stopped at the same interrupt with 5 findings. The review
+  node was not re-run.
+- **Human decisions (the project owner, live).** All 5 findings approved, no edits, no rejects. The
+  owner checked each against the diff: `ledger/report.py:11-12` off_by_one (verifier: confirmed),
+  `ledger/store.py:5-6` hardcoded_secret (confirmed), `ledger/store.py:24` sql_injection (confirmed;
+  found by bug_reviewer), `tests/test_report.py:5` and `:9` ineffective_test (verifier: uncertain,
+  `limit_reached`; both real).
+- **Posting.** One `COMMENTED` review,
+  https://github.com/BilalAamir4/mapr-playground/pull/1#pullrequestreview-6047172731, carrying the
+  marker. Checked afterwards through the public GitHub API: exactly one review on the PR and 5 inline
+  comments, on the files and lines above (ranges 11-12 and 5-6 as `start_line`/`line`).
+- **Double-post check.** `approve` run again on the same key printed `already posted (marker found),
+  not posted again` with the same URL and asked nothing. Screenshot: `docs/media/double-post-check.png`.
+- **Not exercised live.** The `edit` and `reject` paths and `--dry-run` were covered only by unit tests,
+  not by the live run. The `+demo` review is still waiting at its interrupt, untouched; nothing was
+  posted for it. The screen recording of the approval step (`docs/media/approval-demo.*`) is not in the
+  repository.
+- **Limitation.** `plan_runs` counts only evaluation runs, so the stage 6 model calls (two reviews) are
+  not in its daily total.

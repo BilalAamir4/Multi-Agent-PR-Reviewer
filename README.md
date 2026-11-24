@@ -27,7 +27,7 @@ flowchart TD
     class ORCH,HUM decision
 ```
 
-Human approval and posting are built as a CLI (`approval/`, decision 0016); the live run on a real PR is still pending.
+Human approval and posting are built as a CLI (`approval/`, decision 0016) and were run once on a real PR (see "Human approval and posting").
 
 ## What is built
 
@@ -45,8 +45,38 @@ Human approval and posting are built as a CLI (`approval/`, decision 0016); the 
 
 ## Not built yet
 
-- The GitHub webhook service (cut by choice; the CLI posts instead).
-- Hardening (stage 7).
+- The GitHub webhook service and Postgres checkpoints (both left out on purpose, from the plan's
+  cut list; the CLI posts and SQLite stores the checkpoints).
+- Hardening (stage 7) is next.
+- The stage 5 evaluation is not finished (see Results).
+
+## Human approval and posting
+
+This is a portfolio project, not a product. `python -m approval review-pr` runs the review graph
+(review, judge, present) on a real pull request and stops at a LangGraph `interrupt` with the findings.
+`approve` asks per finding: approve, edit (title, explanation, severity only) or reject. State is
+checkpointed in SQLite, so `resume` continues after a crash from the last finished node. Posting uses
+a least-privilege fine-grained token and one GitHub review: findings on changed diff lines become
+inline comments, the rest go in the summary. A hidden marker in the review body stops a second
+posting.
+
+Live run (2026-11-25) on a small test repository: the review reached the interrupt with 5 findings; a
+killed-and-resumed copy continued after the review step without re-running it; I approved all 5 after
+checking them against the diff; one review with 5 inline comments was posted
+(https://github.com/BilalAamir4/mapr-playground/pull/1#pullrequestreview-6047172731); running `approve`
+again printed "already posted (marker found)" and posted nothing. Edit and reject were covered by unit
+tests only, not by the live run. Details: `docs/decisions/0016-human-approval-and-posting.md`.
+
+## Demo
+
+- Test pull request: https://github.com/BilalAamir4/mapr-playground/pull/1
+- Double-post check: `docs/media/double-post-check.png`
+- LangSmith trace: `docs/media/trace.png`
+- Screen recording of the approval step: not recorded yet. Save it as `docs/media/approval-demo.mp4`
+  (or `.gif`) and link it here.
+
+![Double-post check](docs/media/double-post-check.png)
+![LangSmith trace](docs/media/trace.png)
 
 ## Running it
 

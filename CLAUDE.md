@@ -244,5 +244,5 @@ run the model checks in loops.
 | Dataset E1 (item_006 to item_013) | done (decision 0014): 8 items, 12 checks pass for all 13 items |
 | Dataset E2 (item_014 to item_020) | done (decision 0014): 7 items, 12 checks pass for all 20 items; **dataset complete: 20 items** |
 | 5 Evaluation | not started |
-| 6 Approval and posting (CLI; webhook and Postgres cut) | code and unit tests done (decision 0016, `approval/`); **live acceptance run pending** (model 503 on 2026-11-24); not done until it passes |
+| 6 Approval and posting (CLI; webhook and Postgres cut) | done (decision 0016, `approval/`): live run on `mapr-playground` PR 1 posted one review with 5 inline comments; the double-post check passed; edit and reject were covered only by unit tests |
 | 7 Hardening | not started |
