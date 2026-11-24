@@ -24,20 +24,20 @@
     "tool_calls_by_tool": {},
     "input_tokens": 0,
     "output_tokens": 0,
-    "duration_s": 297.25,
+    "duration_s": 292.125,
     "wait_s": 285.0,
-    "net_duration_s": 12.25,
+    "net_duration_s": 7.125,
     "waits_by_reason": {
       "retry_server": 285.0
     },
     "retries_by_reason": {
       "retry_server": 6
     },
-    "langsmith_run_id": "be2d3641-84c1-48f2-8992-361a7790e57f",
+    "langsmith_run_id": "7fb8d750-5c1b-4075-999a-dbfb39bc4a71",
     "attempts": [
       {
         "model": "gemini-3.1-flash-lite",
-        "langsmith_run_id": "be2d3641-84c1-48f2-8992-361a7790e57f",
+        "langsmith_run_id": "7fb8d750-5c1b-4075-999a-dbfb39bc4a71",
         "model_calls": 0,
         "tool_calls": {},
         "input_tokens": 0,
@@ -102,6 +102,51 @@
         {
           "model": "gemini-3.1-flash-lite",
           "langsmith_run_id": "be2d3641-84c1-48f2-8992-361a7790e57f",
+          "model_calls": 0,
+          "tool_calls": {},
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "outcome": "GoogleAPIError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
+        }
+      ]
+    },
+    {
+      "plan": [],
+      "children": {},
+      "wait_s_sum": 285.0,
+      "wait_s_wall": 285.0,
+      "own_model_calls": 0,
+      "own_input_tokens": 0,
+      "own_output_tokens": 0,
+      "security_mode": "local",
+      "security_transport": null,
+      "security_transport_detail": null,
+      "spawn_enabled": true,
+      "spawn_max_concurrency": 3,
+      "spawned": {},
+      "started_at": "2026-11-24T14:19:45+00:00",
+      "reason": "Google 503 UNAVAILABLE outage (RetriesExhausted, 0 model calls) on first attempt",
+      "status": "error",
+      "scoring": {
+        "decision": "rerun_required",
+        "cause": "RetriesExhausted"
+      },
+      "retries_by_reason": {
+        "retry_server": 6
+      },
+      "error": "evaluation model 'gemini-3.1-flash-lite' still failing with SERVER after 6 retries",
+      "model_id": "gemini-3.1-flash-lite",
+      "prompt_version": "4eda79561a8c",
+      "model_calls": 0,
+      "tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "duration_s": 292.125,
+      "wait_s": 285.0,
+      "attempts": [
+        {
+          "model": "gemini-3.1-flash-lite",
+          "langsmith_run_id": "7fb8d750-5c1b-4075-999a-dbfb39bc4a71",
           "model_calls": 0,
           "tool_calls": {},
           "input_tokens": 0,
